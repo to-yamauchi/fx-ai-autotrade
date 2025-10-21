@@ -1,0 +1,26 @@
+# FX自動トレードシステム 依存パッケージ
+# データ処理
+pandas>=2.0.0
+numpy>=1.24.0
+
+# MetaTrader5連携
+MetaTrader5>=5.0.45
+
+# データベース
+psycopg2-binary>=2.9.0
+
+# AI/機械学習
+google-generativeai>=0.3.0
+
+# 環境変数管理
+python-dotenv>=1.0.0
+
+# テスト
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# ロギング・ユーティリティ
+colorlog>=6.7.0
+
+# 型チェック
+mypy>=1.5.0
