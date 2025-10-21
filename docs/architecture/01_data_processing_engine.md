@@ -29,9 +29,92 @@ MT5 → 【データ処理エンジン】 → AI分析エンジン → ルール
 
 ## 2. 主要機能
 
-### 2.1 MT5接続とデータ取得
+### 2.1 ティックデータ取得
 
-#### 2.1.1 接続管理
+#### 2.1.1 データソースの選択
+
+**バックテスト/モデル作成モード（推奨）**:
+- **データソース**: 月単位zipファイル（中身はcsvファイル）
+- **保存場所**: `data/tick_data/USDJPY/`
+- **ファイル命名規則**:
+  - zip: `ticks_USDJPY-oj5k_yyyy-mm.zip`
+  - csv: `ticks_USDJPY-oj5k_yyyy-mm.csv`（zip内）
+  - 例: `ticks_USDJPY-oj5k_2024-09.zip` → `ticks_USDJPY-oj5k_2024-09.csv`
+- **CSV形式**:
+  ```csv
+  timestamp,bid,ask,volume
+  2024-09-01 00:00:00.123,149.650,149.653,100
+  2024-09-01 00:00:00.234,149.651,149.654,150
+  2024-09-01 00:00:00.345,149.649,149.652,80
+  ```
+- **フィールド説明**:
+  - timestamp: ティックのタイムスタンプ（ミリ秒精度）
+  - bid: 買値
+  - ask: 売値
+  - volume: ティック数
+- **用途**: AI学習、バックテスト、戦略検証
+
+**リアルタイムトレードモード**:
+- **データソース**: MT5 API（MetaTrader5 Python API）
+- **対象通貨ペア**: USDJPY（Phase 1-4）
+- **取得頻度**:
+  - リアルタイム（価格変動ごと）
+  - Layer 1監視用（100ms間隔）
+- **データ項目**:
+  - bid（買値）
+  - ask（売値）
+  - last（最終約定価格）
+  - volume（出来高）
+  - time（タイムスタンプ）
+- **用途**: 実運用時のエントリー/決済判断、Layer 1監視
+
+#### 2.1.2 zipファイルの処理
+
+**zip展開処理**:
+```python
+import zipfile
+import csv
+from datetime import datetime
+
+def load_tick_data_from_zip(zip_path):
+    """
+    zipファイルからティックデータを読み込む
+
+    Args:
+        zip_path: zipファイルのパス
+                  例: data/tick_data/USDJPY/ticks_USDJPY-oj5k_2024-09.zip
+
+    Returns:
+        list: ティックデータのリスト
+    """
+    tick_data = []
+
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        # zip内のcsvファイルを取得
+        # ファイル名: ticks_USDJPY-oj5k_2024-09.csv
+        csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv')]
+
+        for csv_file in csv_files:
+            with zip_ref.open(csv_file) as f:
+                reader = csv.DictReader(io.TextIOWrapper(f, 'utf-8'))
+                for row in reader:
+                    tick = {
+                        'time': datetime.fromisoformat(row['timestamp']),
+                        'bid': float(row['bid']),
+                        'ask': float(row['ask']),
+                        'volume': int(row['volume'])
+                    }
+                    tick_data.append(tick)
+
+    return tick_data
+```
+
+**月単位データの管理**:
+- バックテスト期間に応じて複数の月のzipファイルを自動読み込み
+- メモリ効率を考慮し、必要な期間のみをロード
+- キャッシュ機構により再読み込みを削減
+
+#### 2.1.3 MT5接続管理（リアルタイムモード）
 
 **技術**:
 - MetaTrader5 Python API
@@ -45,21 +128,6 @@ MT5 → 【データ処理エンジン】 → AI分析エンジン → ルール
 2. 失敗時はアラート送信
 3. Layer 1は独立稼働（保護継続）
 ```
-
-#### 2.1.2 ティックデータ取得
-
-**対象通貨ペア**: USDJPY（Phase 1-4）
-
-**取得頻度**:
-- リアルタイム（価格変動ごと）
-- Layer 1監視用（100ms間隔）
-
-**データ項目**:
-- bid（買値）
-- ask（売値）
-- last（最終約定価格）
-- volume（出来高）
-- time（タイムスタンプ）
 
 ### 2.2 時間足変換
 
@@ -332,7 +400,7 @@ def generate_data_hash(market_data):
 
 ## 3. データフロー
 
-### 3.1 リアルタイム処理
+### 3.1 リアルタイム処理（実運用モード）
 
 ```
 【100msごと】
@@ -348,15 +416,44 @@ MT5 → 時間足更新チェック
 標準化データ生成 → AI分析エンジンへ渡す
 ```
 
-### 3.2 バックテスト処理
+### 3.2 バックテスト処理（モデル作成モード）
 
 ```
 【指定日時ごと】
-過去データ読み込み → 時間足変換
-                   → テクニカル指標計算
-                   → 標準化データ生成
-                   → データハッシュ計算
-                   → 保存（再利用可能）
+zipファイルからティックデータ読み込み
+  ↓
+月単位データを期間に応じて結合
+  ↓
+時間足変換（D1, H4, H1, M15）
+  ↓
+テクニカル指標計算
+  ↓
+標準化データ生成
+  ↓
+データハッシュ計算
+  ↓
+保存（再利用可能）
+  ↓
+AI分析/バックテスト実行
+```
+
+**zipファイル読み込みフロー**:
+```
+指定期間: 2024-09-01 〜 2024-10-31
+
+1. 該当する月のzipファイルを特定
+   - ticks_USDJPY-oj5k_2024-09.zip
+   - ticks_USDJPY-oj5k_2024-10.zip
+
+2. 各zipファイルを順次読み込み
+   - 展開してcsvデータを取得
+     - ticks_USDJPY-oj5k_2024-09.csv
+     - ticks_USDJPY-oj5k_2024-10.csv
+   - メモリ効率を考慮し、チャンク読み込みも可能
+
+3. 時系列順にソート・結合
+
+4. 時間足変換処理へ
 ```
 
 ---
@@ -404,14 +501,360 @@ MT5 → 時間足更新チェック
 
 ---
 
-## 6. 実装ロードマップ
+## 6. データ保持戦略
+
+### 6.1 データ保持の設計方針
+
+リアルタイム運用時、**メモリ効率**と**応答速度**を両立するため、以下の3層でデータを管理：
+
+1. **メモリ（常時保持）**: 頻繁にアクセスするデータ
+2. **メモリ（一時保持）**: 処理中のみ必要なデータ
+3. **DB（永続化）**: 履歴・分析用データ
+
+---
+
+### 6.2 メモリ常時保持データ
+
+**目的**: Layer 1監視、エントリー/決済判断に必要な最新データ
+
+| データ種別 | 保持内容 | 更新頻度 | メモリサイズ目安 |
+|-----------|---------|---------|---------------|
+| **現在ティック** | 最新の bid/ask/time | 100ms | 数十バイト |
+| **時間足データ** | D1(30本), H4(50本), H1(100本), M15(100本) | 1分 | 約50KB |
+| **テクニカル指標** | EMA, RSI, MACD等の最新値 | 1分 | 約10KB |
+| **標準化データJSON** | 最新の市場状況サマリー | 1分 | 約20KB |
+| **現在のルールJSON** | AI生成の最新トレードルール | 定時更新時 | 約10KB |
+| **ポジション情報** | エントリー価格、時刻、ロット等 | ポジション変動時 | 数KB |
+
+**合計メモリ使用量**: 約100KB（非常に軽量）
+
+**実装イメージ**:
+```python
+class MarketDataCache:
+    def __init__(self):
+        # 常時保持データ
+        self.current_tick = None  # 最新ティック
+        self.timeframes = {
+            'D1': [],   # 30本
+            'H4': [],   # 50本
+            'H1': [],   # 100本
+            'M15': []   # 100本
+        }
+        self.indicators = {}  # テクニカル指標
+        self.standardized_data = None  # 標準化JSON
+        self.current_rules = None  # AI生成ルール
+        self.positions = []  # 保有ポジション
+
+    def update_tick(self, tick):
+        """100msごとに呼ばれる（古いティックは破棄）"""
+        self.current_tick = tick
+
+    def update_timeframes(self):
+        """1分ごとに呼ばれる"""
+        self.timeframes['M15'] = fetch_from_mt5('M15', 100)
+        self.timeframes['H1'] = fetch_from_mt5('H1', 100)
+        # ... 以下同様
+        self._recalculate_indicators()
+        self._regenerate_standardized_data()
+```
+
+---
+
+### 6.3 一時保持データ（処理中のみ）
+
+**目的**: データ処理・計算中の中間データ（処理完了後は破棄）
+
+| データ種別 | 使用タイミング | 保持期間 | 目的 |
+|-----------|--------------|---------|------|
+| **バックテスト用ティック** | zipファイル読み込み時 | 処理中のみ | 時間足変換・検証用 |
+| **計算中の配列** | テクニカル指標計算時 | 数秒 | EMA/RSI等の計算 |
+| **一時JSON** | AI分析直前 | 数秒 | Gemini送信前の最終整形 |
+
+**実装イメージ**:
+```python
+def process_backtest_month(zip_path):
+    """バックテスト実行時"""
+    # 一時的にティックデータをロード
+    tick_data = load_tick_data_from_zip(zip_path)  # メモリに展開
+
+    # 処理
+    timeframes = convert_to_timeframes(tick_data)
+    indicators = calculate_indicators(timeframes)
+
+    # 結果をDBに保存
+    save_to_db(timeframes, indicators)
+
+    # ティックデータは破棄（関数終了でメモリ解放）
+    del tick_data
+```
+
+---
+
+### 6.4 DB永続化データ
+
+**目的**: 履歴分析、バックテスト検証、トレード記録
+
+| データ種別 | 保存タイミング | 保存期間 | 用途 |
+|-----------|--------------|---------|------|
+| **トレード記録** | エントリー/決済時 | 永久 | 実績分析、税務 |
+| **AI判断履歴** | AI実行時（1日5-10回） | 永久 | 判断精度の検証 |
+| **ルールJSON履歴** | ルール更新時 | 永久 | 戦略の変遷追跡 |
+| **市場データスナップショット** | AI実行時 | 永久 | 再現性確保 |
+| **バックテスト結果** | バックテスト完了時 | 永久 | 戦略評価 |
+| **異常検知ログ** | 異常発生時 | 永久 | トラブルシューティング |
+
+**データベーススキーマ例**:
+```sql
+-- トレード記録
+CREATE TABLE trades (
+    id INTEGER PRIMARY KEY,
+    entry_time TIMESTAMP,
+    exit_time TIMESTAMP,
+    symbol VARCHAR(10),
+    direction VARCHAR(4),  -- BUY/SELL
+    entry_price DECIMAL(10,5),
+    exit_price DECIMAL(10,5),
+    lots DECIMAL(5,2),
+    profit_loss DECIMAL(10,2),
+    rule_json TEXT,  -- 使用したルールJSON
+    market_data_hash VARCHAR(32)  -- 市場データの同一性確認用
+);
+
+-- AI判断履歴
+CREATE TABLE ai_analysis_history (
+    id INTEGER PRIMARY KEY,
+    timestamp TIMESTAMP,
+    analysis_type VARCHAR(50),  -- 'morning_analysis', 'position_review'等
+    model_used VARCHAR(50),  -- 'gemini-2.5-pro'等
+    input_data TEXT,  -- 標準化データJSON
+    output_rules TEXT,  -- ルールJSON
+    data_hash VARCHAR(32)
+);
+```
+
+---
+
+### 6.5 データ更新・破棄タイミング
+
+#### 6.5.1 100msごと（Layer 1監視）
+
+```python
+while True:
+    # 最新ティック取得
+    tick = mt5.symbol_info_tick("USDJPY")
+
+    # メモリの現在ティックを更新（上書き）
+    cache.update_tick(tick)
+
+    # Layer 1チェック
+    if check_emergency_conditions(tick):
+        execute_emergency_close()
+
+    sleep(0.1)  # 100ms待機
+```
+
+**保持**: 最新ティック1件のみ（古いティックは破棄）
+
+---
+
+#### 6.5.2 1分ごと（時間足・指標更新）
+
+```python
+if every_minute():
+    # MT5から最新時間足を取得
+    cache.timeframes['M15'] = mt5.copy_rates_from_pos("USDJPY", M15, 0, 100)
+    cache.timeframes['H1'] = mt5.copy_rates_from_pos("USDJPY", H1, 0, 100)
+    cache.timeframes['H4'] = mt5.copy_rates_from_pos("USDJPY", H4, 0, 50)
+    cache.timeframes['D1'] = mt5.copy_rates_from_pos("USDJPY", D1, 0, 30)
+
+    # テクニカル指標を再計算
+    cache.indicators = calculate_all_indicators(cache.timeframes)
+
+    # 標準化データJSONを再生成
+    cache.standardized_data = generate_standardized_json(
+        cache.timeframes,
+        cache.indicators
+    )
+```
+
+**保持**: 指定本数のみ（M15は100本、古いものは自動的に削除）
+
+---
+
+#### 6.5.3 定時AI分析時（08:00, 12:00等）
+
+```python
+if current_time in ANALYSIS_SCHEDULE:
+    # メモリの最新標準化データを使用
+    standardized_data = cache.standardized_data
+
+    # AI分析実行
+    rules = gemini_api.analyze(standardized_data)
+
+    # ルールJSONをメモリに保持（上書き）
+    cache.current_rules = rules
+
+    # DBに履歴として保存
+    db.save_ai_analysis(
+        timestamp=now(),
+        input_data=standardized_data,
+        output_rules=rules
+    )
+```
+
+**保持**:
+- メモリ: 最新ルールJSON 1件
+- DB: 全履歴を永続化
+
+---
+
+#### 6.5.4 ポジション保有時（15分ごと評価）
+
+```python
+if has_position() and every_15_minutes():
+    # 簡易データ生成（軽量化）
+    position_summary = {
+        'entry_price': cache.positions[0].entry_price,
+        'current_price': cache.current_tick.bid,
+        'pnl': calculate_pnl(),
+        'holding_minutes': get_holding_time(),
+        'recent_m15': cache.timeframes['M15'][-5:],  # 直近5本のみ
+        'key_indicators': {
+            'rsi': cache.indicators['rsi']['h1'],
+            'ema_trend': cache.indicators['ema']['h1_alignment']
+        }
+    }
+
+    # Flash-Lite で評価
+    evaluation = gemini_flash_lite.evaluate(position_summary)
+
+    # DB保存（トラブル時の追跡用）
+    db.save_position_evaluation(evaluation)
+```
+
+**保持**:
+- メモリ: ポジション情報のみ
+- DB: 評価履歴を永続化
+
+---
+
+### 6.6 バックテストモード時のデータ管理
+
+```python
+def run_backtest(start_date, end_date):
+    """バックテスト実行"""
+
+    # 必要な月のzipファイルを特定
+    zip_files = get_zip_files_for_period(start_date, end_date)
+
+    for zip_file in zip_files:
+        # 一時的にティックデータをロード
+        tick_data = load_tick_data_from_zip(zip_file)
+
+        # 1日ごとに処理
+        for day in get_trading_days(tick_data):
+            day_ticks = filter_by_day(tick_data, day)
+
+            # 時間足変換
+            timeframes = convert_to_timeframes(day_ticks)
+
+            # テクニカル指標計算
+            indicators = calculate_indicators(timeframes)
+
+            # 標準化データ生成
+            standardized_data = generate_standardized_json(
+                timeframes, indicators
+            )
+
+            # AI分析（バックテスト用）
+            rules = gemini_api.analyze(standardized_data)
+
+            # 仮想トレード実行
+            result = simulate_trade(rules, day_ticks)
+
+            # 結果をDBに保存
+            db.save_backtest_result(result)
+
+        # 月単位のティックデータを破棄
+        del tick_data
+```
+
+**メモリ使用**:
+- 1ヶ月のティックデータ（数百MB）を一時的にロード
+- 処理完了後は破棄
+- 結果のみDBに永続化
+
+---
+
+### 6.7 メモリ管理のベストプラクティス
+
+#### 6.7.1 リアルタイムモード
+
+```python
+# ✅ 良い例：必要最小限のデータのみ保持
+cache.current_tick = latest_tick  # 最新1件のみ
+cache.timeframes['M15'] = mt5.copy_rates(100)  # 必要な100本のみ
+
+# ❌ 悪い例：全ティックを保持
+all_ticks = []  # これはやらない
+while True:
+    tick = get_tick()
+    all_ticks.append(tick)  # メモリリークの原因
+```
+
+#### 6.7.2 バックテストモード
+
+```python
+# ✅ 良い例：チャンク処理
+zip_files = [
+    'ticks_USDJPY-oj5k_2024-09.zip',
+    'ticks_USDJPY-oj5k_2024-10.zip'
+]
+for zip_file in zip_files:
+    tick_data = load_zip(zip_file)  # 1ヶ月分
+    process(tick_data)
+    del tick_data  # 明示的に解放
+    gc.collect()  # ガベージコレクション
+
+# ❌ 悪い例：全期間を一度にロード
+all_tick_data = []
+for zip_file in zip_files:
+    all_tick_data.extend(load_zip(zip_file))  # メモリ不足の原因
+```
+
+---
+
+### 6.8 データ保持まとめ
+
+| 保持場所 | データ種別 | サイズ | 更新頻度 | 保持期間 |
+|---------|-----------|--------|---------|---------|
+| **メモリ** | 現在ティック | 数十B | 100ms | 常時（最新1件のみ） |
+| **メモリ** | 時間足データ | 50KB | 1分 | 常時（指定本数のみ） |
+| **メモリ** | テクニカル指標 | 10KB | 1分 | 常時 |
+| **メモリ** | 標準化JSON | 20KB | 1分 | 常時 |
+| **メモリ** | ルールJSON | 10KB | 定時 | 常時（最新1件のみ） |
+| **メモリ** | ポジション情報 | 数KB | 変動時 | 常時 |
+| **メモリ一時** | バックテスト用ティック | 数百MB | - | 処理中のみ |
+| **DB** | トレード記録 | 累積 | エントリー/決済時 | 永久 |
+| **DB** | AI判断履歴 | 累積 | 1日5-10回 | 永久 |
+| **DB** | 市場スナップショット | 累積 | AI実行時 | 永久 |
+
+**設計思想**:
+- **メモリは最小限**: リアルタイム処理に必要な最新データのみ
+- **DBは詳細に**: 分析・検証・トラブルシューティング用に全履歴保存
+- **一時データは即破棄**: バックテスト用の大量データは処理後即解放
+
+---
+
+## 7. 実装ロードマップ
 
 ### Phase 1（Week 1）
 
 **優先度: 最高**
 
-- MT5接続機能
-- ティックデータ取得
+- データ取得機能
+  - zipファイルからのティックデータ読み込み機能（優先）
+  - MT5接続機能（リアルタイム用）
 - 時間足変換（D1, H4, H1, M15）
 - 基本的なOHLC生成
 
