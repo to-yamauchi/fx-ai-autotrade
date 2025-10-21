@@ -36,8 +36,10 @@ MT5 → 【データ処理エンジン】 → AI分析エンジン → ルール
 **バックテスト/モデル作成モード（推奨）**:
 - **データソース**: 月単位zipファイル（中身はcsvファイル）
 - **保存場所**: `data/tick_data/USDJPY/`
-- **ファイル命名規則**: `USDJPY_YYYY-MM.zip`
-  - 例: `USDJPY_2024-09.zip`、`USDJPY_2024-10.zip`
+- **ファイル命名規則**:
+  - zip: `ticks_USDJPY-oj5k_yyyy-mm.zip`
+  - csv: `ticks_USDJPY-oj5k_yyyy-mm.csv`（zip内）
+  - 例: `ticks_USDJPY-oj5k_2024-09.zip` → `ticks_USDJPY-oj5k_2024-09.csv`
 - **CSV形式**:
   ```csv
   timestamp,bid,ask,volume
@@ -79,7 +81,8 @@ def load_tick_data_from_zip(zip_path):
     zipファイルからティックデータを読み込む
 
     Args:
-        zip_path: zipファイルのパス (例: data/tick_data/USDJPY/USDJPY_2024-09.zip)
+        zip_path: zipファイルのパス
+                  例: data/tick_data/USDJPY/ticks_USDJPY-oj5k_2024-09.zip
 
     Returns:
         list: ティックデータのリスト
@@ -87,7 +90,8 @@ def load_tick_data_from_zip(zip_path):
     tick_data = []
 
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        # zip内のcsvファイルを取得（通常1ファイル）
+        # zip内のcsvファイルを取得
+        # ファイル名: ticks_USDJPY-oj5k_2024-09.csv
         csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv')]
 
         for csv_file in csv_files:
@@ -438,11 +442,13 @@ AI分析/バックテスト実行
 指定期間: 2024-09-01 〜 2024-10-31
 
 1. 該当する月のzipファイルを特定
-   - USDJPY_2024-09.zip
-   - USDJPY_2024-10.zip
+   - ticks_USDJPY-oj5k_2024-09.zip
+   - ticks_USDJPY-oj5k_2024-10.zip
 
 2. 各zipファイルを順次読み込み
    - 展開してcsvデータを取得
+     - ticks_USDJPY-oj5k_2024-09.csv
+     - ticks_USDJPY-oj5k_2024-10.csv
    - メモリ効率を考慮し、チャンク読み込みも可能
 
 3. 時系列順にソート・結合
@@ -800,6 +806,10 @@ while True:
 
 ```python
 # ✅ 良い例：チャンク処理
+zip_files = [
+    'ticks_USDJPY-oj5k_2024-09.zip',
+    'ticks_USDJPY-oj5k_2024-10.zip'
+]
 for zip_file in zip_files:
     tick_data = load_zip(zip_file)  # 1ヶ月分
     process(tick_data)

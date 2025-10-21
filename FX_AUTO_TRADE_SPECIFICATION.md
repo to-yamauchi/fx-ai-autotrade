@@ -274,13 +274,18 @@ AIと確定的データを組み合わせた、安全で再現可能なFX自動�
 **バックテスト/モデル作成用（推奨）**:
 - **形式**: 月単位のzipファイル（中身はcsvファイル）
 - **保存場所**: `data/tick_data/USDJPY/`
-- **ファイル命名規則**: `USDJPY_YYYY-MM.zip`（例: `USDJPY_2024-09.zip`）
+- **ファイル命名規則**:
+  - zip: `ticks_USDJPY-oj5k_yyyy-mm.zip`
+  - 例: `ticks_USDJPY-oj5k_2024-09.zip`
 - **csv形式**:
-  ```csv
-  timestamp,bid,ask,volume
-  2024-09-01 00:00:00.123,149.650,149.653,100
-  2024-09-01 00:00:00.234,149.651,149.654,150
-  ```
+  - ファイル名: `ticks_USDJPY-oj5k_yyyy-mm.csv`
+  - 例: `ticks_USDJPY-oj5k_2024-09.csv`
+  - 内容:
+    ```csv
+    timestamp,bid,ask,volume
+    2024-09-01 00:00:00.123,149.650,149.653,100
+    2024-09-01 00:00:00.234,149.651,149.654,150
+    ```
 - **用途**: AI学習、バックテスト、戦略検証
 
 **リアルタイムトレード用**:
@@ -1016,10 +1021,11 @@ AI判断の精度・一貫性を評価
 検証期間: 2024年9月1日〜30日（20営業日）
 
 必要なzipファイル:
-- data/tick_data/USDJPY/USDJPY_2024-09.zip
-- （必要に応じて前月も: USDJPY_2024-08.zip）
+- data/tick_data/USDJPY/ticks_USDJPY-oj5k_2024-09.zip
+- （必要に応じて前月も: ticks_USDJPY-oj5k_2024-08.zip）
 
-1ヶ月のティックデータ:
+zipファイルの中身:
+- csv: ticks_USDJPY-oj5k_2024-09.csv
 - サイズ: 数百MB
 - 内容: timestamp, bid, ask, volume
 - 処理: 1日ごとにチャンク処理（メモリ効率化）

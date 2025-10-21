@@ -31,8 +31,12 @@
 
 **保存場所**: `data/tick_data/USDJPY/`
 
-**ファイル命名規則**: `USDJPY_YYYY-MM.zip`
-- 例: `USDJPY_2024-09.zip`、`USDJPY_2024-10.zip`
+**ファイル命名規則**:
+- zip: `ticks_USDJPY-oj5k_yyyy-mm.zip`
+- csv: `ticks_USDJPY-oj5k_yyyy-mm.csv`（zip内）
+- 例:
+  - `ticks_USDJPY-oj5k_2024-09.zip` → `ticks_USDJPY-oj5k_2024-09.csv`
+  - `ticks_USDJPY-oj5k_2024-10.zip` → `ticks_USDJPY-oj5k_2024-10.csv`
 
 **CSV形式**:
 ```csv
