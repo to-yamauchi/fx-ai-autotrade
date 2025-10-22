@@ -265,6 +265,104 @@ class TickDataLoader:
         self.logger.info("ティックデータの検証成功")
         return True
 
+    def load_date_range(
+        self,
+        symbol: str,
+        start_date: datetime,
+        end_date: datetime
+    ) -> List[Dict]:
+        """
+        期間指定でティックデータを読み込む
+
+        指定された期間に含まれる複数月のzipファイルを読み込み、
+        結合したティックデータを返します。
+
+        Args:
+            symbol (str): 通貨ペア（例: "USDJPY"）
+            start_date (datetime): 開始日
+            end_date (datetime): 終了日
+
+        Returns:
+            List[Dict]: ティックデータのリスト
+                各要素は以下のキーを持つ辞書:
+                - timestamp: datetime型のタイムスタンプ
+                - bid: Bid価格
+                - ask: Ask価格
+                - volume: 出来高
+
+        Raises:
+            ValueError: 日付範囲が不正な場合
+            FileNotFoundError: 必要なファイルが見つからない場合
+        """
+        # 日付範囲の検証
+        if start_date >= end_date:
+            raise ValueError(
+                f"start_date ({start_date.date()}) must be before "
+                f"end_date ({end_date.date()})"
+            )
+
+        self.logger.info(
+            f"期間指定データ読み込み開始: {symbol} "
+            f"{start_date.date()} ～ {end_date.date()}"
+        )
+
+        # 必要な月のリストを生成
+        months_to_load = []
+        current_date = start_date.replace(day=1)  # 月の最初の日に設定
+
+        while current_date <= end_date:
+            months_to_load.append((current_date.year, current_date.month))
+            # 次の月へ
+            if current_date.month == 12:
+                current_date = current_date.replace(year=current_date.year + 1, month=1)
+            else:
+                current_date = current_date.replace(month=current_date.month + 1)
+
+        self.logger.info(f"読み込み対象: {len(months_to_load)}ヶ月分のデータ")
+
+        # 各月のデータを読み込んで結合
+        all_tick_data = []
+        missing_files = []
+
+        for year, month in months_to_load:
+            try:
+                tick_data = self.load_from_zip(symbol, year, month)
+                all_tick_data.extend(tick_data)
+            except FileNotFoundError:
+                # ファイルが見つからない場合は記録して続行
+                missing_files.append(f"{year}-{month:02d}")
+                self.logger.warning(
+                    f"ファイルが見つかりません: {symbol} {year}-{month:02d} (スキップ)"
+                )
+                continue
+
+        # 一部のファイルが見つからなかった場合は警告
+        if missing_files:
+            self.logger.warning(
+                f"以下の月のデータが見つかりませんでした: {', '.join(missing_files)}"
+            )
+
+        # データが全く読み込めなかった場合はエラー
+        if not all_tick_data:
+            raise FileNotFoundError(
+                f"指定期間のデータが見つかりません: "
+                f"{symbol} {start_date.date()} ～ {end_date.date()}"
+            )
+
+        # 指定期間内のデータのみをフィルタリング
+        filtered_data = [
+            tick for tick in all_tick_data
+            if start_date <= tick['timestamp'] <= end_date
+        ]
+
+        self.logger.info(
+            f"期間指定データ読み込み完了: {len(filtered_data):,} 件 "
+            f"({len(months_to_load)}ヶ月分, "
+            f"フィルタ前: {len(all_tick_data):,} 件)"
+        )
+
+        return filtered_data
+
 
 # モジュールテスト用のメイン関数
 if __name__ == "__main__":
