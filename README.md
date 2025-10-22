@@ -100,7 +100,7 @@ fx-ai-autotrade/
 
 ## 使用方法
 
-### フェーズ1: データ基盤（現在の実装状態）
+### フェーズ1: データ基盤
 
 #### ティックデータの読み込み
 
@@ -118,6 +118,52 @@ if loader.validate_data(tick_data):
     print(f"読み込み成功: {len(tick_data)} 件のティックデータ")
 ```
 
+### フェーズ2: データ変換とテクニカル指標
+
+#### 時間足変換とテクニカル指標の計算
+
+```python
+from src.data_processing import TimeframeConverter, TechnicalIndicators
+
+# 時間足変換
+converter = TimeframeConverter()
+h1_data = converter.convert_to_timeframe(tick_data, 'H1')
+
+# テクニカル指標計算
+indicators = TechnicalIndicators()
+rsi = indicators.calculate_rsi(h1_data['close'])
+macd = indicators.calculate_macd(h1_data['close'])
+```
+
+### フェーズ3: AI分析エンジン（現在の実装状態）
+
+#### AI判断の実行
+
+```python
+from src.ai_analysis import AIAnalyzer
+
+# AIアナライザーの初期化
+analyzer = AIAnalyzer(
+    symbol='USDJPY',
+    model='flash'  # 'pro' / 'flash' / 'flash-lite'
+)
+
+# マーケット分析実行
+result = analyzer.analyze_market(year=2024, month=9)
+
+# 結果の表示
+print(f"判断: {result['action']}")
+print(f"信頼度: {result['confidence']}%")
+print(f"理由: {result['reasoning']}")
+```
+
+#### サンプルスクリプトの実行
+
+```bash
+# Phase 3のデモスクリプト実行
+python phase3_sample.py
+```
+
 #### テストの実行
 
 ```bash
@@ -126,6 +172,7 @@ pytest tests/ -v
 
 # 特定のモジュールのテスト
 pytest tests/test_tick_loader.py -v
+pytest tests/test_ai_analyzer.py -v
 
 # カバレッジ付きテスト実行
 pytest tests/ --cov=src --cov-report=html
@@ -147,10 +194,11 @@ pytest tests/ --cov=src --cov-report=html
 - [x] テクニカル指標計算（EMA/RSI/MACD/ATR/BB）
 - [x] AI用データ標準化とJSON変換
 
-### フェーズ3: AI分析エンジン（次のステップ）
-- [ ] Gemini API連携
-- [ ] AI判断ロジック実装
-- [ ] 判断結果のDB保存
+### フェーズ3: AI分析エンジン ✅ 完了
+- [x] Gemini API連携（3モデル対応: Pro/Flash/Flash-8B）
+- [x] AI判断ロジック実装（BUY/SELL/HOLD）
+- [x] 判断結果のDB保存
+- [x] 統合分析フロー実装
 
 ### フェーズ4: ルールエンジンとトレード実行
 - [ ] トレードルールエンジン
@@ -173,6 +221,7 @@ pytest tests/ --cov=src --cov-report=html
 - **[FX自動トレード仕様書.md](./FX自動トレード仕様書.md)**: システム全体の仕様
 - **[開発ステップ.md](./開発ステップ.md)**: 段階的な開発手順
 - **[docs/phase1_modules.md](./docs/phase1_modules.md)**: フェーズ1のモジュール詳細説明
+- **[docs/phase3_modules.md](./docs/phase3_modules.md)**: フェーズ3のモジュール詳細説明
 - **[docs/architecture/](./docs/architecture/)**: アーキテクチャ設計書
 - **[docs/basic_design/](./docs/basic_design/)**: 基本設計書
 
@@ -250,12 +299,14 @@ pytest tests/ --cov=src --cov-report=html
 
 問題が発生した場合は、以下を確認してください:
 
-1. **[docs/phase1_modules.md](./docs/phase1_modules.md)** のトラブルシューティングセクション
+1. フェーズ別モジュールドキュメントのトラブルシューティングセクション
+   - **[docs/phase1_modules.md](./docs/phase1_modules.md)**: データ基盤
+   - **[docs/phase3_modules.md](./docs/phase3_modules.md)**: AI分析エンジン
 2. GitHubのIssuesセクション
 3. 開発ドキュメント
 
 ---
 
 **プロジェクト作成日**: 2025-10-21
-**現在のフェーズ**: フェーズ2完了
-**バージョン**: 0.2.0
+**現在のフェーズ**: フェーズ3完了
+**バージョン**: 0.3.0
