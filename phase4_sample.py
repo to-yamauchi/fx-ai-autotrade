@@ -61,9 +61,56 @@ print(f"検証結果: {'✓ PASS' if is_valid else '✗ FAIL'}")
 print(f"理由: {message}")
 print()
 
-# Phase 4: トレード実行（デモモード）
-print("【ステップ3】トレード実行（デモモード）...")
-manager = PositionManager(symbol='USDJPY', use_mt5=False)
+# Phase 4: トレード実行（MT5 DEMO口座）
+print("【ステップ3】トレード実行（MT5 DEMO口座接続）...")
+
+# MT5接続情報の確認
+mt5_login = os.getenv('MT5_LOGIN')
+mt5_password = os.getenv('MT5_PASSWORD')
+mt5_server = os.getenv('MT5_SERVER')
+
+if not all([mt5_login, mt5_password, mt5_server]):
+    print("\n" + "=" * 80)
+    print("エラー: MT5接続情報が設定されていません")
+    print("=" * 80)
+    print()
+    print(".envファイルに以下の情報を設定してください:")
+    print("  MT5_LOGIN=your_account_number")
+    print("  MT5_PASSWORD=your_password")
+    print("  MT5_SERVER=demo_server_name")
+    print()
+    print("【MT5 DEMO口座の開設方法】")
+    print("  1. MetaTrader5をインストール")
+    print("     https://www.metatrader5.com/ja/download")
+    print("  2. MT5を起動して「ファイル」→「デモ口座を開く」")
+    print("  3. ブローカーを選択（例: OANDA、XM等）")
+    print("  4. 口座情報（ログイン・パスワード・サーバー名）を控える")
+    print("  5. .envファイルに設定")
+    print()
+    print("【重要】MT5が起動していることも確認してください")
+    print("=" * 80)
+    sys.exit(1)
+
+# MT5接続モードでPositionManagerを初期化
+manager = PositionManager(symbol='USDJPY', use_mt5=True)
+
+# MT5に接続できているか確認
+if not manager.executor or not manager.use_mt5:
+    print("\n" + "=" * 80)
+    print("エラー: MT5への接続に失敗しました")
+    print("=" * 80)
+    print()
+    print("【確認事項】")
+    print("  1. MetaTrader5が起動しているか確認")
+    print("  2. .envファイルの接続情報が正しいか確認")
+    print("     MT5_LOGIN=" + (mt5_login if mt5_login else "未設定"))
+    print("     MT5_SERVER=" + (mt5_server if mt5_server else "未設定"))
+    print("  3. DEMO口座が有効か確認（期限切れの場合は再作成）")
+    print()
+    print("=" * 80)
+    sys.exit(1)
+
+print("✓ MT5 DEMO口座に接続しました")
 result = manager.process_ai_judgment(ai_judgment)
 
 print(f"実行結果: {'✓ SUCCESS' if result['success'] else '✗ FAILED'}")
@@ -84,7 +131,7 @@ print("【実装済み機能】")
 print("  ✓ トレードルールエンジン")
 print("  ✓ ルール検証（信頼度/スプレッド/ポジション数/時間/ボラティリティ）")
 print("  ✓ ポジションサイズ計算")
-print("  ✓ MT5トレード実行（デモモード）")
+print("  ✓ MT5トレード実行（DEMO口座接続）")
 print("  ✓ ポジション管理")
 print()
 print("【次のステップ】")
