@@ -201,6 +201,43 @@ class MT5Executor:
         volume = max(volume_min, min(volume, volume_max))
         volume = round(volume / volume_step) * volume_step
 
+        # ストップレベルのチェックと調整
+        stops_level = symbol_info.trade_stops_level
+        point = symbol_info.point
+
+        # 最小ストップレベル（ポイント単位）を価格差に変換
+        min_stop_distance = stops_level * point
+
+        # SL/TPが指定されている場合、最小距離を確認
+        if sl and sl > 0:
+            sl_distance = abs(price - sl)
+            if min_stop_distance > 0 and sl_distance < min_stop_distance:
+                # 最小距離を満たさない場合はSLを調整
+                if action == 'BUY':
+                    sl = price - min_stop_distance
+                else:
+                    sl = price + min_stop_distance
+                self.logger.warning(
+                    f"SL adjusted to meet minimum stop level: {sl:.5f} "
+                    f"(min distance: {min_stop_distance:.5f})"
+                )
+
+        if tp and tp > 0:
+            tp_distance = abs(price - tp)
+            if min_stop_distance > 0 and tp_distance < min_stop_distance:
+                # 最小距離を満たさない場合はTPを調整
+                if action == 'BUY':
+                    tp = price + min_stop_distance
+                else:
+                    tp = price - min_stop_distance
+                self.logger.warning(
+                    f"TP adjusted to meet minimum stop level: {tp:.5f} "
+                    f"(min distance: {min_stop_distance:.5f})"
+                )
+
+        # Filling Modeを決定（ブローカーによって対応が異なる）
+        filling_type = self._get_filling_mode(symbol_info)
+
         # 注文リクエストを作成
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
@@ -214,7 +251,7 @@ class MT5Executor:
             "magic": self.MAGIC_NUMBER,
             "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": filling_type,
         }
 
         # 注文を送信
@@ -237,10 +274,21 @@ class MT5Executor:
             )
             return result.order
         else:
-            self.logger.error(
-                f"Trade failed: retcode={result.retcode}, "
-                f"comment={result.comment}"
-            )
+            # エラー詳細をログ
+            error_msg = f"Trade failed: retcode={result.retcode}, comment={result.comment}"
+
+            # エラーコード10016（Invalid stops）の場合は詳細情報を追加
+            if result.retcode == 10016:
+                error_msg += (
+                    f"\n  Stop level error details:"
+                    f"\n    Current price: {price:.5f}"
+                    f"\n    SL: {sl:.5f}" if sl else ""
+                    f"\n    TP: {tp:.5f}" if tp else ""
+                    f"\n    Min stop distance: {min_stop_distance:.5f}"
+                    f"\n    Stops level (points): {stops_level}"
+                )
+
+            self.logger.error(error_msg)
             return None
 
     def close_position(self, ticket: int) -> bool:
@@ -373,6 +421,34 @@ class MT5Executor:
         spread_pips = (tick.ask - tick.bid) / symbol_info.point / 10
 
         return spread_pips
+
+    def _get_filling_mode(self, symbol_info) -> int:
+        """
+        シンボルに適したFilling Modeを取得
+
+        Args:
+            symbol_info: シンボル情報
+
+        Returns:
+            Filling Mode（ORDER_FILLING_XXX）
+        """
+        # シンボルがサポートするFilling Modeを確認
+        filling_mode = symbol_info.filling_mode
+
+        # FOK (Fill or Kill) が使えるか
+        if filling_mode & 2:  # ORDER_FILLING_FOK
+            return mt5.ORDER_FILLING_FOK
+
+        # IOC (Immediate or Cancel) が使えるか
+        if filling_mode & 1:  # ORDER_FILLING_IOC
+            return mt5.ORDER_FILLING_IOC
+
+        # RETURN (Return) が使えるか
+        if filling_mode & 4:  # ORDER_FILLING_RETURN
+            return mt5.ORDER_FILLING_RETURN
+
+        # デフォルトはFOK
+        return mt5.ORDER_FILLING_FOK
 
     def get_account_info(self) -> Optional[Dict]:
         """
