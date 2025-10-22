@@ -37,9 +37,9 @@ print(f"Reasoning: {result['reasoning']}")
 ```
 
 【サポートモデル】
-- pro: gemini-1.5-pro-latest（高精度、コスト高）
-- flash: gemini-1.5-flash-latest（バランス型、推奨）
-- flash-lite: gemini-1.5-flash-8b-latest（高速軽量）
+- pro: gemini-1.5-pro（高精度、コスト高）
+- flash: gemini-2.0-flash-exp（Gemini 2.0、推奨）
+- flash-lite: gemini-1.5-flash（高速軽量）
 """
 
 from src.ai_analysis.gemini_client import GeminiClient
