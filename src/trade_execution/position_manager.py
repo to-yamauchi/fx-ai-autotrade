@@ -201,6 +201,8 @@ class PositionManager:
             # デモモード：DBから取得
             try:
                 conn = psycopg2.connect(**self.db_config)
+                # エンコーディングを明示的に設定
+                conn.set_client_encoding('UTF8')
                 cursor = conn.cursor()
 
                 query = """
@@ -216,7 +218,14 @@ class PositionManager:
 
                 return count
             except Exception as e:
-                self.logger.error(f"Failed to get positions count: {e}")
+                # エラーメッセージの安全なデコード
+                error_msg = str(e)
+                try:
+                    if isinstance(e.args[0] if e.args else '', bytes):
+                        error_msg = e.args[0].decode('utf-8', errors='replace')
+                except:
+                    error_msg = repr(e)
+                self.logger.error(f"Failed to get positions count: {error_msg}")
                 return 0
 
     def _get_spread(self) -> Optional[float]:
@@ -304,6 +313,8 @@ class PositionManager:
         """
         try:
             conn = psycopg2.connect(**self.db_config)
+            # エンコーディングを明示的に設定
+            conn.set_client_encoding('UTF8')
             cursor = conn.cursor()
 
             # positionsテーブルに保存
@@ -333,7 +344,14 @@ class PositionManager:
             return True
 
         except Exception as e:
-            self.logger.error(f"Failed to save trade record: {e}")
+            # エラーメッセージの安全なデコード
+            error_msg = str(e)
+            try:
+                if isinstance(e.args[0] if e.args else '', bytes):
+                    error_msg = e.args[0].decode('utf-8', errors='replace')
+            except:
+                error_msg = repr(e)
+            self.logger.error(f"Failed to save trade record: {error_msg}")
             return False
 
     def get_open_positions(self) -> List[Dict]:
@@ -349,6 +367,8 @@ class PositionManager:
             # デモモード：DBから取得
             try:
                 conn = psycopg2.connect(**self.db_config)
+                # エンコーディングを明示的に設定
+                conn.set_client_encoding('UTF8')
                 cursor = conn.cursor()
 
                 query = """
@@ -362,10 +382,20 @@ class PositionManager:
 
                 positions = []
                 for row in rows:
+                    # テキストフィールドの安全なデコード
+                    try:
+                        ticket = row[0] if not isinstance(row[0], bytes) else row[0].decode('utf-8', errors='replace')
+                        symbol = row[1] if not isinstance(row[1], bytes) else row[1].decode('utf-8', errors='replace')
+                        trade_type = row[2] if not isinstance(row[2], bytes) else row[2].decode('utf-8', errors='replace')
+                    except:
+                        ticket = str(row[0])
+                        symbol = str(row[1])
+                        trade_type = str(row[2])
+
                     positions.append({
-                        'ticket': row[0],
-                        'symbol': row[1],
-                        'type': row[2],
+                        'ticket': ticket,
+                        'symbol': symbol,
+                        'type': trade_type,
                         'volume': float(row[3]),
                         'open_price': float(row[4]),
                         'sl': float(row[5]) if row[5] else None,
@@ -380,7 +410,14 @@ class PositionManager:
                 return positions
 
             except Exception as e:
-                self.logger.error(f"Failed to get positions: {e}")
+                # エラーメッセージの安全なデコード
+                error_msg = str(e)
+                try:
+                    if isinstance(e.args[0] if e.args else '', bytes):
+                        error_msg = e.args[0].decode('utf-8', errors='replace')
+                except:
+                    error_msg = repr(e)
+                self.logger.error(f"Failed to get positions: {error_msg}")
                 return []
 
     def close_position(self, ticket: int) -> bool:
