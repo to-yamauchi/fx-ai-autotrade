@@ -308,7 +308,8 @@ class AIAnalyzer:
             # Support & Resistance
             indicators['support_resistance'] = \
                 self.technical_indicators.calculate_support_resistance(
-                    data=h1_data,
+                    high=h1_data['high'],
+                    low=h1_data['low'],
                     window=20
                 )
 
@@ -414,13 +415,21 @@ class AIAnalyzer:
 
             judgments = []
             for row in rows:
+                # reasoningフィールドを安全に取得（エンコーディングエラー対策）
+                try:
+                    reasoning = row[5] if row[5] else ''
+                    if isinstance(reasoning, bytes):
+                        reasoning = reasoning.decode('utf-8', errors='replace')
+                except Exception:
+                    reasoning = '[Encoding Error]'
+
                 judgments.append({
                     'id': row[0],
                     'timestamp': row[1].isoformat() if row[1] else None,
                     'symbol': row[2],
                     'action': row[3],
                     'confidence': float(row[4]) if row[4] else 0,
-                    'reasoning': row[5],
+                    'reasoning': reasoning,
                     'created_at': row[6].isoformat() if row[6] else None
                 })
 
