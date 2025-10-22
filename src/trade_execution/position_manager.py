@@ -289,6 +289,18 @@ class PositionManager:
         sl = ai_judgment.get('stop_loss')
         tp = ai_judgment.get('take_profit')
 
+        # デバッグ: 価格の妥当性チェック
+        print(f"\n[DEBUG] AI judgment prices:")
+        print(f"  Entry: {ai_judgment.get('entry_price')}")
+        print(f"  SL: {sl}")
+        print(f"  TP: {tp}")
+
+        # 一時的にSL/TPを無効化（テスト用）
+        # TODO: 本番では現在価格ベースで再計算する必要がある
+        print(f"[DEBUG] Disabling SL/TP for testing (AI prices are from 2024-09, current is 2025-10)")
+        sl = None
+        tp = None
+
         ticket = self.executor.execute_trade(
             symbol=self.symbol,
             action=action,
