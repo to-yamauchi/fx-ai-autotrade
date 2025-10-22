@@ -26,7 +26,8 @@ MT5から取得したティックデータをzip圧縮したファイルから�
 【データフォーマット】
 入力ファイル名: ticks_{symbol}-oj5k_{year:04d}-{month:02d}.zip
 CSV名: ticks_{symbol}-oj5k_{year:04d}-{month:02d}.csv
-CSVカラム: timestamp, bid, ask, volume
+CSVカラム: <DATE>, <TIME>, <BID>, <ASK>, <LAST>, <VOLUME>
+区切り文字: タブ（TSV形式）
 
 【依存関係】
 - zipfile: zip圧縮ファイルの展開
@@ -156,17 +157,37 @@ class TickDataLoader:
                 with zip_ref.open(csv_filename) as f:
                     # UTF-8エンコーディングでテキストラッパーを適用
                     text_wrapper = io.TextIOWrapper(f, encoding='utf-8')
-                    reader = csv.DictReader(text_wrapper)
+                    # タブ区切り（TSV）として読み込み
+                    reader = csv.DictReader(text_wrapper, delimiter='\t')
 
                     # 各行を処理
                     for row_num, row in enumerate(reader, start=1):
                         try:
+                            # <DATE> と <TIME> を結合してタイムスタンプを作成
+                            # フォーマット: "2024.01.01" + " " + "20:11:15.408"
+                            date_str = row['<DATE>'].strip()
+                            time_str = row['<TIME>'].strip()
+
+                            # "2024.01.01 20:11:15.408" → datetime
+                            # まず、"."を"-"に変換して標準形式にする
+                            date_str = date_str.replace('.', '-')
+                            timestamp_str = f"{date_str} {time_str}"
+                            timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
+
+                            # Bid/Ask価格を取得
+                            bid = float(row['<BID>'].strip())
+                            ask = float(row['<ASK>'].strip())
+
+                            # Volumeを取得（空の場合は0）
+                            volume_str = row.get('<VOLUME>', '').strip()
+                            volume = int(float(volume_str)) if volume_str else 0
+
                             # ティックデータの構築
                             tick = {
-                                'timestamp': datetime.fromisoformat(row['timestamp']),
-                                'bid': float(row['bid']),
-                                'ask': float(row['ask']),
-                                'volume': int(row.get('volume', 0))
+                                'timestamp': timestamp,
+                                'bid': bid,
+                                'ask': ask,
+                                'volume': volume
                             }
                             tick_data.append(tick)
 

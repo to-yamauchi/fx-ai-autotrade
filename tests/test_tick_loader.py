@@ -45,29 +45,35 @@ class TestTickDataLoader:
     @pytest.fixture
     def sample_tick_data(self):
         """
-        テスト用のサンプルティックデータを生成
+        テスト用のサンプルティックデータを生成（実際のMT5フォーマット）
 
         Returns:
-            list: サンプルティックデータのリスト
+            list: サンプルティックデータのリスト（TSV形式）
         """
         return [
             {
-                'timestamp': '2024-09-01T00:00:00',
-                'bid': '145.123',
-                'ask': '145.125',
-                'volume': '100'
+                '<DATE>': '2024.09.01',
+                '<TIME>': '00:00:00.000',
+                '<BID>': '145.123',
+                '<ASK>': '145.125',
+                '<LAST>': '',
+                '<VOLUME>': '100'
             },
             {
-                'timestamp': '2024-09-01T00:00:01',
-                'bid': '145.124',
-                'ask': '145.126',
-                'volume': '150'
+                '<DATE>': '2024.09.01',
+                '<TIME>': '00:00:01.000',
+                '<BID>': '145.124',
+                '<ASK>': '145.126',
+                '<LAST>': '',
+                '<VOLUME>': '150'
             },
             {
-                'timestamp': '2024-09-01T00:00:02',
-                'bid': '145.125',
-                'ask': '145.127',
-                'volume': '200'
+                '<DATE>': '2024.09.01',
+                '<TIME>': '00:00:02.000',
+                '<BID>': '145.125',
+                '<ASK>': '145.127',
+                '<LAST>': '',
+                '<VOLUME>': '200'
             }
         ]
 
@@ -96,10 +102,10 @@ class TestTickDataLoader:
         # 一時CSVファイルを作成してzipに圧縮
         csv_path = symbol_dir / csv_filename
 
-        # CSVファイルを作成
+        # CSVファイルを作成（TSV形式、タブ区切り）
         with open(csv_path, 'w', newline='', encoding='utf-8') as f:
-            fieldnames = ['timestamp', 'bid', 'ask', 'volume']
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            fieldnames = ['<DATE>', '<TIME>', '<BID>', '<ASK>', '<LAST>', '<VOLUME>']
+            writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter='\t')
             writer.writeheader()
             writer.writerows(sample_tick_data)
 
