@@ -162,6 +162,29 @@ print(f"理由: {result['reasoning']}")
 ```bash
 # Phase 3のデモスクリプト実行
 python phase3_sample.py
+
+# Phase 4のデモスクリプト実行
+python phase4_sample.py
+```
+
+### フェーズ4: ルールエンジンとトレード実行（現在の実装状態）
+
+#### トレード実行
+
+```python
+from src.ai_analysis import AIAnalyzer
+from src.trade_execution import PositionManager
+
+# AI分析
+analyzer = AIAnalyzer(symbol='USDJPY')
+ai_judgment = analyzer.analyze_market(year=2024, month=9)
+
+# トレード実行（デモモード）
+manager = PositionManager(symbol='USDJPY', use_mt5=False)
+result = manager.process_ai_judgment(ai_judgment)
+
+print(f"実行結果: {result['success']}")
+print(f"メッセージ: {result['message']}")
 ```
 
 #### テストの実行
@@ -173,6 +196,7 @@ pytest tests/ -v
 # 特定のモジュールのテスト
 pytest tests/test_tick_loader.py -v
 pytest tests/test_ai_analyzer.py -v
+pytest tests/test_phase4.py -v
 
 # カバレッジ付きテスト実行
 pytest tests/ --cov=src --cov-report=html
@@ -200,10 +224,10 @@ pytest tests/ --cov=src --cov-report=html
 - [x] 判断結果のDB保存
 - [x] 統合分析フロー実装
 
-### フェーズ4: ルールエンジンとトレード実行
-- [ ] トレードルールエンジン
-- [ ] MT5トレード実行
-- [ ] ポジション管理
+### フェーズ4: ルールエンジンとトレード実行 ✅ 完了
+- [x] トレードルールエンジン（信頼度/スプレッド/ポジション数チェック）
+- [x] MT5トレード実行（成行注文、決済）
+- [x] ポジション管理（統合フロー）
 
 ### フェーズ5: モニタリングと決済
 - [ ] 3層モニタリングシステム
@@ -308,5 +332,5 @@ pytest tests/ --cov=src --cov-report=html
 ---
 
 **プロジェクト作成日**: 2025-10-21
-**現在のフェーズ**: フェーズ3完了
-**バージョン**: 0.3.0
+**現在のフェーズ**: フェーズ4完了
+**バージョン**: 0.4.0
