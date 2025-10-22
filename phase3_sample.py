@@ -160,9 +160,19 @@ def main():
     # APIキーの確認
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
-        logger.warning("GEMINI_API_KEYが設定されていません")
-        print("\033[93m警告: GEMINI_API_KEYが設定されていないため、AI分析はダミーデータで実行されます\033[0m")
         print()
+        print_separator()
+        print("  エラー: GEMINI_API_KEYが設定されていません")
+        print_separator()
+        print()
+        print(".envファイルにGEMINI_API_KEYを設定してください:")
+        print("  1. .env.templateをコピーして.envファイルを作成")
+        print("  2. GEMINI_API_KEY=your_api_key_here を追加")
+        print()
+        print("Gemini APIキーの取得方法:")
+        print("  https://aistudio.google.com/app/apikey")
+        print()
+        sys.exit(1)
 
     # パラメータ設定
     symbol = 'USDJPY'

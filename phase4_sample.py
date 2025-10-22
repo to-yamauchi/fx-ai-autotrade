@@ -18,32 +18,30 @@ print("  フェーズ4: ルールエンジンとトレード実行 デモンス�
 print("=" * 80)
 print()
 
-# Phase 3: AI分析実行（またはデモデータ使用）
+# Phase 3: AI分析実行
 print("【ステップ1】AI分析実行...")
 
 # APIキーが設定されているか確認
 api_key = os.getenv('GEMINI_API_KEY')
 
-if api_key:
-    # 実際のAI分析を実行
-    print("Gemini APIを使用して実際のAI分析を実行中...")
-    analyzer = AIAnalyzer(symbol='USDJPY', model='flash')
-    ai_judgment = analyzer.analyze_market(year=2024, month=9)
-else:
-    # デモデータを使用
-    print("⚠ GEMINI_API_KEYが設定されていません。デモデータを使用します。")
+if not api_key:
+    print("\n" + "=" * 80)
+    print("エラー: GEMINI_API_KEYが設定されていません")
+    print("=" * 80)
     print()
-    ai_judgment = {
-        'action': 'BUY',
-        'confidence': 75,
-        'reasoning': 'デモデータ: 上昇トレンド継続中',
-        'entry_price': 143.05,
-        'stop_loss': 142.70,
-        'take_profit': 143.50,
-        'timestamp': '2024-09-30T23:59:59',
-        'symbol': 'USDJPY',
-        'model': 'demo'
-    }
+    print(".envファイルにGEMINI_API_KEYを設定してください:")
+    print("  1. .env.templateをコピーして.envファイルを作成")
+    print("  2. GEMINI_API_KEY=your_api_key_here を追加")
+    print()
+    print("Gemini APIキーの取得方法:")
+    print("  https://aistudio.google.com/app/apikey")
+    print()
+    sys.exit(1)
+
+# 実際のAI分析を実行
+print("Gemini APIを使用して実際のAI分析を実行中...")
+analyzer = AIAnalyzer(symbol='USDJPY', model='flash')
+ai_judgment = analyzer.analyze_market(year=2024, month=9)
 
 print(f"AI判断: {ai_judgment['action']}")
 print(f"信頼度: {ai_judgment['confidence']}%")
