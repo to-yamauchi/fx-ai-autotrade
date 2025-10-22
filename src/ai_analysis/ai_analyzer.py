@@ -86,7 +86,8 @@ class AIAnalyzer:
             'port': int(os.getenv('DB_PORT', 5432)),
             'database': os.getenv('DB_NAME', 'fx_autotrade'),
             'user': os.getenv('DB_USER', 'postgres'),
-            'password': os.getenv('DB_PASSWORD', '')
+            'password': os.getenv('DB_PASSWORD', ''),
+            'client_encoding': 'UTF8'
         }
 
         self.logger.info(f"AIAnalyzer initialized for {symbol} with {model} model")
@@ -224,7 +225,7 @@ class AIAnalyzer:
             timeframes = {}
 
             for tf in ['D1', 'H4', 'H1', 'M15']:
-                df = self.timeframe_converter.convert_to_timeframe(
+                df = self.timeframe_converter.convert(
                     tick_data=tick_data,
                     timeframe=tf
                 )
