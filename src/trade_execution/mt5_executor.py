@@ -452,26 +452,26 @@ class MT5Executor:
         # 優先順位: RETURN > FOK > IOC
         # RETURN (Return) - 最も一般的、OANDAなどで推奨
         if filling_mode & 4:  # ORDER_FILLING_RETURN
-            print(f"  → Selected: ORDER_FILLING_RETURN")
+            print(f"  → Selected: ORDER_FILLING_RETURN (value=0)")
             self.logger.info("Selected filling mode: ORDER_FILLING_RETURN")
-            return mt5.ORDER_FILLING_RETURN
+            return 0  # mt5.ORDER_FILLING_RETURN
 
         # FOK (Fill or Kill) - 全量約定または全量キャンセル
         if filling_mode & 2:  # ORDER_FILLING_FOK
-            print(f"  → Selected: ORDER_FILLING_FOK")
+            print(f"  → Selected: ORDER_FILLING_FOK (value=1)")
             self.logger.info("Selected filling mode: ORDER_FILLING_FOK")
-            return mt5.ORDER_FILLING_FOK
+            return 1  # mt5.ORDER_FILLING_FOK
 
         # IOC (Immediate or Cancel) - 即時約定可能な分だけ約定
         if filling_mode & 1:  # ORDER_FILLING_IOC
-            print(f"  → Selected: ORDER_FILLING_IOC")
+            print(f"  → Selected: ORDER_FILLING_IOC (value=2)")
             self.logger.info("Selected filling mode: ORDER_FILLING_IOC")
-            return mt5.ORDER_FILLING_IOC
+            return 2  # mt5.ORDER_FILLING_IOC
 
         # デフォルトはRETURN（最も互換性が高い）
-        print(f"  → Selected: ORDER_FILLING_RETURN (default)")
+        print(f"  → Selected: ORDER_FILLING_RETURN (default, value=0)")
         self.logger.warning("No filling mode detected, using default: ORDER_FILLING_RETURN")
-        return mt5.ORDER_FILLING_RETURN
+        return 0  # mt5.ORDER_FILLING_RETURN
 
     def get_account_info(self) -> Optional[Dict]:
         """
