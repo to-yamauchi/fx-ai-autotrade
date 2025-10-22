@@ -179,12 +179,12 @@ class TimeframeConverter:
 
         # OHLCV形式に変換
         # pandasのresampleを使用して時間足データを生成
-        ohlcv = df['price'].resample(resample_rule).agg([
-            ('open', 'first'),   # 始値: 期間内の最初の価格
-            ('high', 'max'),     # 高値: 期間内の最高価格
-            ('low', 'min'),      # 安値: 期間内の最安価格
-            ('close', 'last')    # 終値: 期間内の最後の価格
-        ])
+        ohlcv = df['price'].resample(resample_rule).agg(
+            ['first', 'max', 'min', 'last']
+        )
+
+        # カラム名を正しい順序に設定
+        ohlcv.columns = ['open', 'high', 'low', 'close']
 
         # 出来高を集計
         volume = df['volume'].resample(resample_rule).sum()
@@ -272,9 +272,9 @@ class TimeframeConverter:
 
         【対応表】
         - D1 → 'D' (1日)
-        - H4 → '4H' (4時間)
-        - H1 → '1H' (1時間)
-        - M15 → '15T' (15分、Tは分を表す)
+        - H4 → '4h' (4時間) ※pandas 2.0以降は小文字
+        - H1 → '1h' (1時間) ※pandas 2.0以降は小文字
+        - M15 → '15min' (15分) ※pandas 2.0以降はmin
 
         Args:
             timeframe (str): 時間足名
@@ -287,9 +287,9 @@ class TimeframeConverter:
         """
         rules = {
             'D1': 'D',
-            'H4': '4H',
-            'H1': '1H',
-            'M15': '15T'
+            'H4': '4h',   # pandas 2.0+では小文字
+            'H1': '1h',   # pandas 2.0+では小文字
+            'M15': '15min'  # pandas 2.0+ではmin
         }
 
         if timeframe not in rules:
