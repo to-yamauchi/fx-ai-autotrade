@@ -87,6 +87,8 @@ fx-ai-autotrade/
    # - DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD: データベース接続情報
    ```
 
+   **MT5のセットアップ方法**: [MT5セットアップガイド](docs/MT5_SETUP_GUIDE.md)を参照してください
+
 5. **データベースのセットアップ**
    ```bash
    # PostgreSQLに接続してデータベースを作成
