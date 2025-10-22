@@ -236,7 +236,9 @@ class MT5Executor:
                 )
 
         # Filling Modeを決定（ブローカーによって対応が異なる）
+        print(f"\n[DEBUG] Calling _get_filling_mode for {symbol}...")
         filling_type = self._get_filling_mode(symbol_info)
+        print(f"[DEBUG] Selected filling_type: {filling_type}")
 
         # 注文リクエストを作成
         request = {
@@ -435,6 +437,12 @@ class MT5Executor:
         # シンボルがサポートするFilling Modeを確認
         filling_mode = symbol_info.filling_mode
 
+        # デバッグ出力（確実に表示）
+        print(f"  Filling mode flags: {filling_mode}")
+        print(f"    FOK (2) supported: {bool(filling_mode & 2)}")
+        print(f"    IOC (1) supported: {bool(filling_mode & 1)}")
+        print(f"    RETURN (4) supported: {bool(filling_mode & 4)}")
+
         # デバッグログ
         self.logger.info(f"Symbol filling_mode flags: {filling_mode}")
         self.logger.info(f"  FOK supported: {bool(filling_mode & 2)}")
@@ -444,20 +452,24 @@ class MT5Executor:
         # 優先順位: RETURN > FOK > IOC
         # RETURN (Return) - 最も一般的、OANDAなどで推奨
         if filling_mode & 4:  # ORDER_FILLING_RETURN
+            print(f"  → Selected: ORDER_FILLING_RETURN")
             self.logger.info("Selected filling mode: ORDER_FILLING_RETURN")
             return mt5.ORDER_FILLING_RETURN
 
         # FOK (Fill or Kill) - 全量約定または全量キャンセル
         if filling_mode & 2:  # ORDER_FILLING_FOK
+            print(f"  → Selected: ORDER_FILLING_FOK")
             self.logger.info("Selected filling mode: ORDER_FILLING_FOK")
             return mt5.ORDER_FILLING_FOK
 
         # IOC (Immediate or Cancel) - 即時約定可能な分だけ約定
         if filling_mode & 1:  # ORDER_FILLING_IOC
+            print(f"  → Selected: ORDER_FILLING_IOC")
             self.logger.info("Selected filling mode: ORDER_FILLING_IOC")
             return mt5.ORDER_FILLING_IOC
 
         # デフォルトはRETURN（最も互換性が高い）
+        print(f"  → Selected: ORDER_FILLING_RETURN (default)")
         self.logger.warning("No filling mode detected, using default: ORDER_FILLING_RETURN")
         return mt5.ORDER_FILLING_RETURN
 
