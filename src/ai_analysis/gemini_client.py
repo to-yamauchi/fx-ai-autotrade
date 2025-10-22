@@ -18,9 +18,9 @@ Google Gemini APIと連携し、マーケットデータを分析してトレー
 4. エラーハンドリング
 
 【使用モデル】
-- gemini-1.5-pro-latest: 高精度分析用（コスト高、速度遅）
-- gemini-1.5-flash-latest: バランス型（推奨）
-- gemini-1.5-flash-8b-latest: 高速軽量型（コスト低、速度速）
+- gemini-1.5-pro: 高精度分析用（コスト高、速度遅）
+- gemini-2.0-flash-exp: Gemini 2.0 Flash（推奨）
+- gemini-1.5-flash: 高速軽量型（コスト低、速度速）
 
 【出力形式】
 {
@@ -70,13 +70,13 @@ class GeminiClient:
 
         # モデルの初期化
         # Pro: 最高精度、コスト高、速度遅
-        self.model_pro = genai.GenerativeModel('gemini-1.5-pro-latest')
+        self.model_pro = genai.GenerativeModel('gemini-1.5-pro')
 
-        # Flash: バランス型、推奨モデル
-        self.model_flash = genai.GenerativeModel('gemini-1.5-flash-latest')
+        # Flash: Gemini 2.0 Flash（推奨モデル）
+        self.model_flash = genai.GenerativeModel('gemini-2.0-flash-exp')
 
         # Flash-8B: 高速軽量、コスト低、精度やや劣る
-        self.model_flash_lite = genai.GenerativeModel('gemini-1.5-flash-8b-latest')
+        self.model_flash_lite = genai.GenerativeModel('gemini-1.5-flash')
 
         self.logger.info("GeminiClient initialized successfully")
 

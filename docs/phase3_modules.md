@@ -82,9 +82,9 @@ client = GeminiClient()
 **初期化時の動作**:
 1. APIキーの検証
 2. 3つのモデルの初期化
-   - `gemini-1.5-pro-latest`: 高精度モデル
-   - `gemini-1.5-flash-latest`: バランス型モデル（推奨）
-   - `gemini-1.5-flash-8b-latest`: 高速軽量モデル
+   - `gemini-1.5-pro`: 高精度モデル
+   - `gemini-2.0-flash-exp`: Gemini 2.0 Flashモデル（推奨）
+   - `gemini-1.5-flash`: 高速軽量モデル
 
 #### 主要メソッド
 
