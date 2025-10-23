@@ -208,23 +208,55 @@ def main():
 
     # Gemini API接続チェック
     print("=" * 80)
-    print("環境チェック")
+    print("環境チェック（LLM API接続）")
     print("=" * 80)
     try:
-        from src.ai_analysis import GeminiClient
-        gemini_client = GeminiClient()
-        if not gemini_client.test_connection(verbose=True):
+        from src.ai_analysis import create_phase_clients
+        from src.utils.config import get_config
+
+        config = get_config()
+
+        # Phase別のLLMクライアントを生成・接続テスト
+        phase_clients = create_phase_clients()
+
+        # 各クライアントの接続テスト
+        all_connected = True
+        for phase_name, client in phase_clients.items():
+            provider = client.get_provider_name()
+            if phase_name == 'daily_analysis':
+                model = config.model_daily_analysis
+                label = "Phase 1,2,5 (デイリー分析)"
+            elif phase_name == 'periodic_update':
+                model = config.model_periodic_update
+                label = "Phase 3     (定期更新)"
+            else:  # position_monitor
+                model = config.model_position_monitor
+                label = "Phase 4     (ポジション監視)"
+
+            print(f"{label}: {model}")
+            print(f"  Provider: {provider.upper()}", end=' ')
+
+            if not client.test_connection(verbose=False):
+                print(" ❌ 接続失敗")
+                all_connected = False
+            else:
+                print(" ✓ 接続成功")
+
+        if not all_connected:
             print("")
-            print("❌ Gemini APIへの接続に失敗しました。")
+            print("❌ LLM APIへの接続に失敗しました。")
             print("   以下を確認してください：")
-            print("   1. .envファイルにGEMINI_API_KEYが正しく設定されているか")
-            print("   2. APIキーが有効か（https://aistudio.google.com/app/apikey で確認）")
-            print("   3. Geminiモデル名が正しいか（GEMINI_MODEL_DAILY_ANALYSIS, GEMINI_MODEL_PERIODIC_UPDATE, GEMINI_MODEL_POSITION_MONITOR）")
-            print("   4. インターネット接続が正常か")
+            print("   1. .envファイルに各APIキーが設定されているか")
+            print("      - GEMINI_API_KEY (Geminiを使用する場合)")
+            print("      - OPENAI_API_KEY (OpenAIを使用する場合)")
+            print("      - ANTHROPIC_API_KEY (Anthropicを使用する場合)")
+            print("   2. モデル名が正しいか")
+            print("   3. インターネット接続が正常か")
             print("")
             return 1
+
     except Exception as e:
-        print(f"❌ Gemini APIの初期化に失敗しました: {e}")
+        print(f"❌ LLM APIの初期化に失敗しました: {e}")
         print("")
         print("   .envファイルを確認してください。")
         print("")

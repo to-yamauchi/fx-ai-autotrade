@@ -133,36 +133,72 @@ class BacktestEngine:
             'client_encoding': 'UTF8'
         }
 
-        # Gemini API接続チェック（skip_api_check=Trueの場合はスキップ）
+        # LLM API接続チェック（skip_api_check=Trueの場合はスキップ）
         if not skip_api_check:
             try:
-                from src.ai_analysis import GeminiClient
-                self.gemini_client = GeminiClient()
+                from src.ai_analysis import create_phase_clients
+                from src.ai_analysis.llm_client_factory import detect_provider_from_model
 
-                # .envで指定されたモデルを使用して接続テスト
-                if not self.gemini_client.test_connection(verbose=True):
+                # Phase別のLLMクライアントを生成・接続テスト
+                print("")
+                print("🤖 LLM API接続テスト:")
+                print("=" * 60)
+
+                phase_clients = create_phase_clients()
+
+                # 各クライアントの接続テスト
+                all_connected = True
+                for phase_name, client in phase_clients.items():
+                    provider = client.get_provider_name()
+                    if phase_name == 'daily_analysis':
+                        model = config.model_daily_analysis
+                        label = "Phase 1,2,5 (デイリー分析)"
+                    elif phase_name == 'periodic_update':
+                        model = config.model_periodic_update
+                        label = "Phase 3     (定期更新)"
+                    else:  # position_monitor
+                        model = config.model_position_monitor
+                        label = "Phase 4     (ポジション監視)"
+
+                    print(f"{label}: {model}")
+                    print(f"  Provider: {provider.upper()}", end=' ')
+
+                    if not client.test_connection(verbose=False):
+                        print(" ❌ 接続失敗")
+                        all_connected = False
+                    else:
+                        print(" ✓ 接続成功")
+
+                print("=" * 60)
+
+                if not all_connected:
                     print("")
-                    print("Gemini APIへの接続に失敗しました。")
+                    print("❌ LLM APIへの接続に失敗しました。")
                     print("以下を確認してください：")
-                    print("  1. .envファイルにGEMINI_API_KEYが設定されているか")
-                    print("  2. Geminiモデル名が正しいか")
+                    print("  1. .envファイルに各APIキーが設定されているか")
+                    print("     - GEMINI_API_KEY (Geminiを使用する場合)")
+                    print("     - OPENAI_API_KEY (OpenAIを使用する場合)")
+                    print("     - ANTHROPIC_API_KEY (Anthropicを使用する場合)")
+                    print("  2. モデル名が正しいか")
                     print("  3. インターネット接続が正常か")
                     print("")
-                    raise ConnectionError("Gemini API connection failed")
+                    raise ConnectionError("LLM API connection failed")
 
-                # 使用するGeminiモデルを表示
-                print("")
-                print("🤖 使用AIモデル:")
-                print(f"   Phase 1,2,5 (デイリー分析):    {self.gemini_client.config.gemini_model_daily_analysis}")
-                print(f"   Phase 3     (定期更新):        {self.gemini_client.config.gemini_model_periodic_update}")
-                print(f"   Phase 4     (ポジション監視):  {self.gemini_client.config.gemini_model_position_monitor}")
+                # 後方互換性のため、gemini_clientも設定（既存コードで使用される可能性）
+                # ただし、新しいコードではphase_clientsを使用すること
+                from src.ai_analysis import GeminiClient
+                try:
+                    self.gemini_client = GeminiClient()
+                except:
+                    # Gemini APIキーが設定されていない場合は None
+                    self.gemini_client = None
 
             except Exception as e:
                 if "ConnectionError" not in str(type(e).__name__):
                     print(f" ❌ エラー: {e}")
                 raise
         else:
-            # API接続スキップ時はGeminiClientを初期化しない
+            # API接続スキップ時はクライアントを初期化しない
             self.gemini_client = None
 
         self.logger.debug(
