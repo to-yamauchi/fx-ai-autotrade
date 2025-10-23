@@ -63,7 +63,8 @@ class CSVTickLoader:
     def load_ticks(
         self,
         start_date: Optional[str] = None,
-        end_date: Optional[str] = None
+        end_date: Optional[str] = None,
+        history_days: int = 30
     ) -> pd.DataFrame:
         """
         Load tick data from CSV file(s)
@@ -71,23 +72,35 @@ class CSVTickLoader:
         Args:
             start_date: Start date (YYYY-MM-DD format), optional
             end_date: End date (YYYY-MM-DD format), optional
+            history_days: Number of days before start_date to load for AI analysis (default: 30)
 
         Returns:
             pd.DataFrame: Tick data with columns: timestamp, bid, ask, volume
 
         Raises:
             FileNotFoundError: If CSV file not found
-            ValueError: If CSV format is invalid
+            ValueError: If CSV format is invalid or data is insufficient
         """
         self.logger.info(f"Loading tick data from CSV: {self.csv_path}")
+
+        # Calculate extended start date for AI historical data
+        extended_start_date = start_date
+        if start_date and history_days > 0:
+            start_dt = pd.to_datetime(start_date)
+            extended_start_dt = start_dt - pd.Timedelta(days=history_days)
+            extended_start_date = extended_start_dt.strftime('%Y-%m-%d')
+            self.logger.info(
+                f"Loading data from {extended_start_date} (extended by {history_days} days) "
+                f"to {end_date} for AI analysis"
+            )
 
         # Check if path is file or directory
         if os.path.isfile(self.csv_path):
             # Single file
             df = self._load_csv_file(self.csv_path)
         elif os.path.isdir(self.csv_path):
-            # Directory - load CSV files (filter by date range if specified)
-            df = self._load_csv_directory(self.csv_path, start_date, end_date)
+            # Directory - load CSV files (filter by extended date range)
+            df = self._load_csv_directory(self.csv_path, extended_start_date, end_date)
         else:
             raise FileNotFoundError(
                 f"CSV path not found: {self.csv_path}"
@@ -98,15 +111,79 @@ class CSVTickLoader:
                 f"No tick data loaded from: {self.csv_path}"
             )
 
-        # Filter by date range if specified
-        if start_date or end_date:
-            df = self._filter_by_date(df, start_date, end_date)
+        # Validate data coverage
+        self._validate_data_coverage(df, extended_start_date, end_date)
 
         self.logger.info(
-            f"Loaded {len(df):,} ticks from CSV"
+            f"Loaded {len(df):,} ticks from CSV (covers {df['timestamp'].min()} to {df['timestamp'].max()})"
         )
 
         return df
+
+    def _validate_data_coverage(
+        self,
+        df: pd.DataFrame,
+        required_start_date: Optional[str],
+        required_end_date: Optional[str]
+    ) -> None:
+        """
+        Validate that loaded data covers the required date range
+
+        Args:
+            df: Loaded tick dataframe
+            required_start_date: Required start date (YYYY-MM-DD)
+            required_end_date: Required end date (YYYY-MM-DD)
+
+        Raises:
+            ValueError: If data coverage is insufficient
+        """
+        if df.empty:
+            raise ValueError("No tick data loaded")
+
+        if not required_start_date and not required_end_date:
+            return
+
+        actual_start = df['timestamp'].min()
+        actual_end = df['timestamp'].max()
+
+        self.logger.info(
+            f"Data coverage: {actual_start} to {actual_end}"
+        )
+
+        errors = []
+
+        # Check start date coverage
+        if required_start_date:
+            required_start_dt = pd.to_datetime(required_start_date)
+            if actual_start > required_start_dt:
+                missing_days = (actual_start - required_start_dt).days
+                errors.append(
+                    f"Missing data before {actual_start.date()}: "
+                    f"Required from {required_start_date}, missing {missing_days} days"
+                )
+
+        # Check end date coverage
+        if required_end_date:
+            required_end_dt = pd.to_datetime(required_end_date)
+            if actual_end < required_end_dt:
+                missing_days = (required_end_dt - actual_end).days
+                errors.append(
+                    f"Missing data after {actual_end.date()}: "
+                    f"Required until {required_end_date}, missing {missing_days} days"
+                )
+
+        if errors:
+            error_msg = (
+                "Insufficient tick data coverage:\n" +
+                "\n".join(f"  - {e}" for e in errors) +
+                f"\n\nPlease ensure CSV files exist for the required date range.\n"
+                f"For backtest period {required_start_date} to {required_end_date}, "
+                f"you need CSV files covering this entire period."
+            )
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        self.logger.info("Data coverage validation: PASSED")
 
     def _normalize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -333,12 +410,14 @@ class CSVTickLoader:
 
         # Filter files by year-month pattern
         filtered_files = []
+        found_months = set()
         pattern = re.compile(r'(\d{4}-\d{2})')  # Match YYYY-MM
 
         for filename in files:
             match = pattern.search(filename)
             if match:
                 file_year_month = match.group(1)
+                found_months.add(file_year_month)
 
                 # Check if this file's month is in the needed range
                 if needed_months is None or file_year_month in needed_months:
@@ -355,6 +434,17 @@ class CSVTickLoader:
                 filtered_files.append(filename)
                 self.logger.debug(
                     f"Including file: {filename} (no date pattern found)"
+                )
+
+        # Check for missing months
+        if needed_months:
+            missing_months = needed_months - found_months
+            if missing_months:
+                self.logger.warning(
+                    f"Missing CSV files for months: {sorted(missing_months)}\n"
+                    f"  Required months: {sorted(needed_months)}\n"
+                    f"  Found months: {sorted(found_months)}\n"
+                    f"  This may cause insufficient data coverage errors."
                 )
 
         return filtered_files
