@@ -361,8 +361,26 @@ class Layer1EmergencyMonitor:
             'initial_balance': self.initial_balance,
             'current_balance': current_balance,
             'open_positions': len(positions),
+            'alert_history_count': len(self.alert_history),
             'thread_alive': self.monitor_thread.is_alive() if self.monitor_thread else False
         }
+
+    def clear_position_tracking(self, ticket: int):
+        """
+        ポジションの追跡情報をクリア（ポジション決済時に呼び出す）
+
+        Args:
+            ticket: チケット番号
+        """
+        # アラート履歴をクリア
+        keys_to_remove = [
+            key for key in self.alert_history
+            if str(ticket) in key
+        ]
+        for key in keys_to_remove:
+            del self.alert_history[key]
+
+        self.logger.info(f"Cleared tracking for position {ticket}")
 
 
 # モジュールのエクスポート
