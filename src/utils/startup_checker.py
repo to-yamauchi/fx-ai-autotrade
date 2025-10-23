@@ -118,13 +118,20 @@ class StartupChecker:
         trade_mode = os.getenv('TRADE_MODE')
         if not trade_mode:
             self.errors.append("TRADE_MODE が設定されていません")
-        elif trade_mode not in ['backtest', 'demo', 'live']:
-            self.errors.append(
-                f"TRADE_MODE が不正です: {trade_mode} "
-                f"(有効な値: backtest, demo, live)"
-            )
         else:
-            print(f"  ✓ TRADE_MODE: {trade_mode}")
+            # 値をクリーンアップ（コメント除去、空白除去）
+            if '#' in trade_mode:
+                trade_mode = trade_mode.split('#')[0]
+            trade_mode = trade_mode.strip()
+
+            # 検証
+            if trade_mode not in ['backtest', 'demo', 'live']:
+                self.errors.append(
+                    f"TRADE_MODE が不正です: {trade_mode} "
+                    f"(有効な値: backtest, demo, live)"
+                )
+            else:
+                print(f"  ✓ TRADE_MODE: {trade_mode}")
 
         # データベース設定
         db_vars = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER']
