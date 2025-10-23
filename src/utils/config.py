@@ -138,6 +138,8 @@ class Config:
 def _get_env_str(key: str, default: str) -> str:
     """環境変数を文字列として取得"""
     value = os.getenv(key, default)
+    if value is None:
+        return default
     # コメントを除去
     if '#' in value:
         value = value.split('#')[0]
@@ -185,6 +187,20 @@ def _get_env_optional_int(key: str) -> Optional[int]:
         return None
 
 
+def _get_env_optional_str(key: str) -> Optional[str]:
+    """環境変数をOptional[str]として取得（未設定の場合はNone）"""
+    value_str = os.getenv(key)
+    if value_str is None or value_str.strip() == '':
+        return None
+    # コメントを除去
+    if '#' in value_str:
+        value_str = value_str.split('#')[0]
+    value_str = value_str.strip()
+    if value_str == '':
+        return None
+    return value_str
+
+
 def load_config() -> Config:
     """
     環境変数から設定を読み込む
@@ -214,9 +230,9 @@ def load_config() -> Config:
         model_position_monitor=_get_env_str('MODEL_POSITION_MONITOR', '') or _get_env_str('GEMINI_MODEL_POSITION_MONITOR', 'gemini-2.5-flash'),
 
         # 後方互換性のため保持（非推奨）
-        gemini_model_daily_analysis=_get_env_str('GEMINI_MODEL_DAILY_ANALYSIS', None),
-        gemini_model_periodic_update=_get_env_str('GEMINI_MODEL_PERIODIC_UPDATE', None),
-        gemini_model_position_monitor=_get_env_str('GEMINI_MODEL_POSITION_MONITOR', None),
+        gemini_model_daily_analysis=_get_env_optional_str('GEMINI_MODEL_DAILY_ANALYSIS'),
+        gemini_model_periodic_update=_get_env_optional_str('GEMINI_MODEL_PERIODIC_UPDATE'),
+        gemini_model_position_monitor=_get_env_optional_str('GEMINI_MODEL_POSITION_MONITOR'),
 
         # AI分析パラメータ
         ai_temperature_daily_analysis=_get_env_float('AI_TEMPERATURE_DAILY_ANALYSIS', 0.3),
