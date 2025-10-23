@@ -61,7 +61,9 @@ class AIAnalyzer:
     def __init__(self,
                  symbol: str = 'USDJPY',
                  data_dir: str = 'data/tick_data',
-                 model: str = 'flash'):
+                 model: str = 'flash',
+                 backtest_start_date: Optional[str] = None,
+                 backtest_end_date: Optional[str] = None):
         """
         AIAnalyzerの初期化
 
@@ -69,10 +71,14 @@ class AIAnalyzer:
             symbol: 通貨ペア（デフォルト: USDJPY）
             data_dir: ティックデータディレクトリ
             model: 使用するGeminiモデル ('pro'/'flash'/'flash-lite')
+            backtest_start_date: バックテスト開始日 (YYYY-MM-DD), バックテストモード時のみ
+            backtest_end_date: バックテスト終了日 (YYYY-MM-DD), バックテストモード時のみ
         """
         self.symbol = symbol
         self.data_dir = data_dir
         self.model = model
+        self.backtest_start_date = backtest_start_date
+        self.backtest_end_date = backtest_end_date
         self.logger = logging.getLogger(__name__)
 
         # トレードモード設定の取得
@@ -366,23 +372,49 @@ class AIAnalyzer:
             # モード別のテーブル名を取得
             table_name = self.table_names['ai_judgments']
 
-            # ai_judgmentsテーブルに保存
-            # timeframeは複数時間足を統合分析しているため'MULTI'を設定
-            insert_query = f"""
-                INSERT INTO {table_name}
-                (timestamp, symbol, timeframe, action, confidence, reasoning, market_data)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """
+            # バックテストモードの場合は追加カラムを含める
+            if self.mode_config.is_backtest():
+                if not self.backtest_start_date or not self.backtest_end_date:
+                    self.logger.warning(
+                        "Backtest mode but backtest dates not provided. Skipping database save."
+                    )
+                    return False
 
-            cursor.execute(insert_query, (
-                datetime.now(),
-                ai_result.get('symbol', self.symbol),
-                'MULTI',  # 複数時間足統合分析
-                ai_result.get('action', 'HOLD'),
-                ai_result.get('confidence', 0),
-                ai_result.get('reasoning', ''),
-                Json(market_data)  # JSONBフィールドに保存
-            ))
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (symbol, timestamp, timeframe, action, confidence, reasoning,
+                     market_data, backtest_start_date, backtest_end_date)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    ai_result.get('symbol', self.symbol),
+                    datetime.now(),
+                    'MULTI',  # 複数時間足統合分析
+                    ai_result.get('action', 'HOLD'),
+                    ai_result.get('confidence', 0),
+                    ai_result.get('reasoning', ''),
+                    Json(market_data),  # JSONBフィールドに保存
+                    self.backtest_start_date,
+                    self.backtest_end_date
+                ))
+            else:
+                # DEMOモード/本番モード
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (timestamp, symbol, timeframe, action, confidence, reasoning, market_data)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now(),
+                    ai_result.get('symbol', self.symbol),
+                    'MULTI',  # 複数時間足統合分析
+                    ai_result.get('action', 'HOLD'),
+                    ai_result.get('confidence', 0),
+                    ai_result.get('reasoning', ''),
+                    Json(market_data)  # JSONBフィールドに保存
+                ))
 
             conn.commit()
             cursor.close()

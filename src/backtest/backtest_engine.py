@@ -237,7 +237,12 @@ class BacktestEngine:
         try:
             # この時点までのデータでAI分析を実行
             # 注: 実際には、timestampより前のデータのみを使用すべき（未来データを使わない）
-            analyzer = AIAnalyzer(symbol=self.symbol, model=self.ai_model)
+            analyzer = AIAnalyzer(
+                symbol=self.symbol,
+                model=self.ai_model,
+                backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
+                backtest_end_date=self.end_date.strftime('%Y-%m-%d')
+            )
 
             # 簡略化: 直近30日のデータを使用
             ai_result = analyzer.analyze_market()
