@@ -35,6 +35,7 @@ from src.utils.trade_mode import get_trade_mode_config
 from src.ai_analysis.ai_analyzer import AIAnalyzer
 from src.trade_execution.position_manager import PositionManager
 from src.monitoring.monitor_orchestrator import MonitorOrchestrator
+from src.backtest.backtest_engine import BacktestEngine
 
 
 def setup_logging():
@@ -56,45 +57,60 @@ def run_backtest_mode():
     過去データを使用してシステムの性能を検証します。
     """
     logger = logging.getLogger(__name__)
-    mode_config = get_trade_mode_config()
 
     logger.info("=" * 80)
     logger.info("バックテストモード開始")
     logger.info("=" * 80)
-
-    # 期間とシンボルを取得
-    start_date, end_date = mode_config.get_backtest_period()
-    symbol = mode_config.get_backtest_symbol()
-
-    logger.info(f"期間: {start_date.date()} ～ {end_date.date()}")
-    logger.info(f"シンボル: {symbol}")
     logger.info("")
 
-    # AI分析の実行
-    logger.info("AI分析を実行中...")
-    analyzer = AIAnalyzer(symbol=symbol, model='flash')
-    ai_result = analyzer.analyze_market()
+    # シンボルと期間設定
+    symbol = 'USDJPY'
+    start_date = '2024-09-01'  # 1ヶ月のバックテスト
+    end_date = '2024-09-30'
+    initial_balance = 100000.0
+    ai_model = 'flash'
+    sampling_interval_hours = 24  # 1日1回AI分析
 
-    logger.info(f"AI判断: {ai_result['action']}")
-    logger.info(f"信頼度: {ai_result.get('confidence', 0)}%")
-    logger.info(f"理由: {ai_result.get('reasoning', 'N/A')[:100]}...")
+    logger.info(f"Symbol: {symbol}")
+    logger.info(f"Period: {start_date} to {end_date}")
+    logger.info(f"Initial Balance: {initial_balance:,.0f} JPY")
+    logger.info(f"AI Model: {ai_model}")
+    logger.info(f"Sampling Interval: {sampling_interval_hours} hours")
     logger.info("")
 
-    # ポジション管理（バックテストモードではMT5使用しない）
-    logger.info("トレード判断を処理中...")
-    position_manager = PositionManager(symbol=symbol, use_mt5=False)
-    result = position_manager.process_ai_judgment(ai_result)
+    # バックテストエンジン初期化
+    engine = BacktestEngine(
+        symbol=symbol,
+        start_date=start_date,
+        end_date=end_date,
+        initial_balance=initial_balance,
+        ai_model=ai_model,
+        sampling_interval_hours=sampling_interval_hours,
+        risk_percent=1.0
+    )
 
-    logger.info(f"結果: {result['message']}")
-    logger.info("")
+    # バックテスト実行
+    results = engine.run()
 
     # サマリー表示
     logger.info("=" * 80)
     logger.info("バックテストモード完了")
     logger.info("=" * 80)
     logger.info("")
-    logger.info("結果はbacktest_ai_judgmentsテーブルに保存されました。")
-    logger.info("詳細はbacktest_summaryビューで確認できます。")
+
+    if results:
+        logger.info("結果サマリー:")
+        logger.info(f"  最終残高: {results['final_balance']:,.0f} JPY")
+        logger.info(f"  純利益: {results['net_profit']:,.0f} JPY")
+        logger.info(f"  リターン: {results['return_pct']:.2f}%")
+        logger.info(f"  勝率: {results['win_rate']:.2f}%")
+        logger.info(f"  プロフィットファクター: {results['profit_factor']:.2f}")
+        logger.info(f"  最大ドローダウン: {results['max_drawdown']:,.0f} JPY ({results['max_drawdown_pct']:.2f}%)")
+        logger.info("")
+        logger.info("詳細結果はbacktest_resultsテーブルに保存されました。")
+    else:
+        logger.error("バックテストが失敗しました。")
+
     logger.info("")
 
 
