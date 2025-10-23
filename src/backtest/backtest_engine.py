@@ -293,12 +293,13 @@ class BacktestEngine:
             conn = psycopg2.connect(**self.db_config)
             cursor = conn.cursor()
 
-            # backtest_で始まる全テーブルを取得
+            # backtest_で始まる全テーブルを取得（VIEWは除外）
             cursor.execute("""
-                SELECT table_name
+                SELECT table_name, table_type
                 FROM information_schema.tables
                 WHERE table_schema = 'public'
                 AND table_name LIKE 'backtest_%'
+                AND table_type = 'BASE TABLE'
                 ORDER BY table_name
             """)
 
@@ -348,15 +349,16 @@ class BacktestEngine:
                     if symbol and has_symbol:
                         delete_query = f"DELETE FROM {table} WHERE symbol = %s"
                         cursor.execute(delete_query, (symbol,))
+                        deleted_counts[table] = cursor.rowcount
                     else:
                         # symbolカラムがない、またはsymbol指定なしの場合は全削除
                         delete_query = f"TRUNCATE TABLE {table} CASCADE"
                         cursor.execute(delete_query)
-
-                    deleted_counts[table] = cursor.rowcount
+                        deleted_counts[table] = 'TRUNCATED'  # TRUNCATEは成功マーク
                 except Exception as e:
                     self.logger.warning(f"Table {table} deletion failed: {e}")
-                    deleted_counts[table] = 0
+                    deleted_counts[table] = 'ERROR'
+                    # エラーが発生しても次のテーブルへ続行
 
             conn.commit()
             cursor.close()
@@ -367,23 +369,35 @@ class BacktestEngine:
             print("✓ 削除完了")
             print("-" * 60)
             total_deleted = 0
-            for table, count in deleted_counts.items():
-                # TRUNCATEの場合rowcountは0になるため、その場合は「全削除」と表示
-                if count == 0 and deleted_counts[table] == 0:
-                    print(f"  {table:<35} 全削除")
-                elif count > 0:
-                    print(f"  {table:<35} {count:>5}件")
-                    total_deleted += count
+            total_truncated = 0
+            total_errors = 0
 
-            if total_deleted == 0:
+            for table, result in deleted_counts.items():
+                if result == 'TRUNCATED':
+                    print(f"  {table:<35} 全削除")
+                    total_truncated += 1
+                elif result == 'ERROR':
+                    print(f"  {table:<35} ❌ エラー")
+                    total_errors += 1
+                elif isinstance(result, int) and result > 0:
+                    print(f"  {table:<35} {result:>5}件")
+                    total_deleted += result
+                elif isinstance(result, int) and result == 0:
+                    print(f"  {table:<35} データなし")
+
+            print("-" * 60)
+            if total_truncated > 0:
+                print(f"  全削除: {total_truncated}テーブル")
+            if total_deleted > 0:
+                print(f"  部分削除: {total_deleted}件")
+            if total_errors > 0:
+                print(f"  エラー: {total_errors}テーブル")
+            if total_deleted == 0 and total_truncated == 0:
                 print("  削除対象のデータはありませんでした。")
-            else:
-                print("-" * 60)
-                print(f"  合計: {total_deleted}件")
             print("")
 
             symbol_msg = f" (symbol={symbol})" if symbol else " (all symbols)"
-            self.logger.info(f"All backtest tables reset{symbol_msg}, deleted {total_deleted} records")
+            self.logger.info(f"All backtest tables reset{symbol_msg}, truncated {total_truncated}, deleted {total_deleted} records, errors {total_errors}")
             return True
 
         except Exception as e:
