@@ -144,6 +144,14 @@ class BacktestEngine:
                 print("")
                 raise ConnectionError("Gemini API connection failed")
             print(" ✓")
+
+            # 使用するGeminiモデルを表示
+            print("")
+            print("🤖 使用AIモデル:")
+            print(f"   Phase 1&2 (デイリーレビュー・朝の分析): {self.gemini_client.config.gemini_model_pro}")
+            print(f"   Phase 3   (定期更新 12:00/16:00/21:30): {self.gemini_client.config.gemini_model_flash}")
+            print(f"   Phase 4   (Layer 3a監視 15分ごと):      {self.gemini_client.config.gemini_model_flash_8b}")
+
         except Exception as e:
             if "ConnectionError" not in str(type(e).__name__):
                 print(f" ❌ エラー: {e}")
