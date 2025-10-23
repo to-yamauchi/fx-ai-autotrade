@@ -1,12 +1,12 @@
 # ========================================
-# 定期更新テーブル作成マイグレーション実行スクリプト
+# Layer 3監視テーブル作成マイグレーション実行スクリプト
 # ========================================
 # 作成日: 2025-10-23
-# 目的: 005_create_periodic_updates_tables.sqlを実行してテーブルを作成
+# 目的: 006_create_layer3_monitoring_tables.sqlを実行してテーブルを作成
 #
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Periodic Updates Tables Migration" -ForegroundColor Cyan
+Write-Host "Layer 3 Monitoring Tables Migration" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -73,12 +73,12 @@ if (-not $psqlPath) {
     Write-Host "  2. Set `$env:PSQL_PATH to your psql.exe location" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Or run migration manually with:" -ForegroundColor Cyan
-    Write-Host "  psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f config/migrations/005_create_periodic_updates_tables.sql" -ForegroundColor White
+    Write-Host "  psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f config/migrations/006_create_layer3_monitoring_tables.sql" -ForegroundColor White
     exit 1
 }
 
 # マイグレーションファイルパス
-$migrationFile = "config/migrations/005_create_periodic_updates_tables.sql"
+$migrationFile = "config/migrations/006_create_layer3_monitoring_tables.sql"
 
 if (-not (Test-Path $migrationFile)) {
     Write-Host "ERROR: Migration file not found: $migrationFile" -ForegroundColor Red
@@ -101,9 +101,12 @@ try {
         Write-Host "========================================" -ForegroundColor Green
         Write-Host ""
         Write-Host "Created tables:" -ForegroundColor Cyan
-        Write-Host "  - backtest_periodic_updates" -ForegroundColor White
-        Write-Host "  - demo_periodic_updates" -ForegroundColor White
-        Write-Host "  - periodic_updates" -ForegroundColor White
+        Write-Host "  - backtest_layer3a_monitoring" -ForegroundColor White
+        Write-Host "  - demo_layer3a_monitoring" -ForegroundColor White
+        Write-Host "  - layer3a_monitoring" -ForegroundColor White
+        Write-Host "  - backtest_layer3b_emergency" -ForegroundColor White
+        Write-Host "  - demo_layer3b_emergency" -ForegroundColor White
+        Write-Host "  - layer3b_emergency" -ForegroundColor White
         Write-Host ""
         Write-Host "Output:" -ForegroundColor Cyan
         Write-Host $output -ForegroundColor Gray
@@ -120,7 +123,7 @@ try {
     Write-Host "ERROR: Failed to execute psql command" -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
     Write-Host ""
-    Write-Host "Make sure PostgreSQL client tools (psql) are installed and in PATH" -ForegroundColor Yellow
+    Write-Host "Make sure PostgreSQL client tools (psql) are installed" -ForegroundColor Yellow
     exit 1
 } finally {
     # パスワード環境変数をクリア
@@ -129,7 +132,7 @@ try {
 
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
-Write-Host "  1. Verify tables with: psql -U $DB_USER -d $DB_NAME -c '\dt *periodic_updates'" -ForegroundColor White
-Write-Host "  2. Test periodic_update() method" -ForegroundColor White
-Write-Host "  3. Run backtest with Phase 3 integration" -ForegroundColor White
+Write-Host "  1. Verify tables with: `$psqlPath -U $DB_USER -d $DB_NAME -c '\dt *layer3*'" -ForegroundColor White
+Write-Host "  2. Test Layer 3a monitoring with: python test_full_integration.py" -ForegroundColor White
+Write-Host "  3. Run backtest with full integration" -ForegroundColor White
 Write-Host ""

@@ -38,6 +38,45 @@ Write-Host "Database: ${DB_NAME}@${DB_HOST}:${DB_PORT}" -ForegroundColor Yellow
 Write-Host "User: $DB_USER" -ForegroundColor Yellow
 Write-Host ""
 
+# Find psql executable
+$psqlPath = $null
+
+# Check if psql is in PATH
+if (Get-Command psql -ErrorAction SilentlyContinue) {
+    $psqlPath = "psql"
+    Write-Host "Found psql in PATH" -ForegroundColor Green
+} else {
+    # Search common PostgreSQL installation directories
+    $commonPaths = @(
+        "C:\Program Files\PostgreSQL\*\bin\psql.exe",
+        "C:\Program Files (x86)\PostgreSQL\*\bin\psql.exe",
+        "C:\PostgreSQL\*\bin\psql.exe"
+    )
+
+    foreach ($pathPattern in $commonPaths) {
+        $found = Get-ChildItem -Path $pathPattern -ErrorAction SilentlyContinue |
+                 Sort-Object FullName -Descending |
+                 Select-Object -First 1
+
+        if ($found) {
+            $psqlPath = $found.FullName
+            Write-Host "Found psql at: $psqlPath" -ForegroundColor Green
+            break
+        }
+    }
+}
+
+if (-not $psqlPath) {
+    Write-Host "Error: psql command not found" -ForegroundColor Red
+    Write-Host "Please ensure PostgreSQL is installed and try one of:" -ForegroundColor Yellow
+    Write-Host "  1. Add PostgreSQL bin directory to your PATH" -ForegroundColor Yellow
+    Write-Host "  2. Set `$env:PSQL_PATH to your psql.exe location" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Or run migration manually with:" -ForegroundColor Cyan
+    Write-Host "  psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f config/migrations/004_create_daily_strategies_tables.sql" -ForegroundColor White
+    exit 1
+}
+
 # マイグレーションファイルパス
 $migrationFile = "config/migrations/004_create_daily_strategies_tables.sql"
 
@@ -55,7 +94,7 @@ $env:PGPASSWORD = $DB_PASSWORD
 # psqlコマンド実行
 try {
     # psqlコマンドを実行
-    $output = & psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f $migrationFile 2>&1
+    $output = & $psqlPath -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f $migrationFile 2>&1
 
     if ($LASTEXITCODE -eq 0) {
         Write-Host "========================================" -ForegroundColor Green
