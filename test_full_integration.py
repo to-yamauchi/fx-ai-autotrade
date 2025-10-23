@@ -162,12 +162,16 @@ def main():
     print("=" * 80)
     print()
 
+    # 設定値を読み込んでモデル名を取得
+    from src.utils.config import get_config
+    config = get_config()
+
     print("このテストは以下を検証します：")
-    print("  ✓ Phase 1: デイリーレビュー（06:00、Gemini Pro）")
-    print("  ✓ Phase 2: 朝の詳細分析（08:00、Gemini Pro）")
-    print("  ✓ Phase 3: 定期更新（12:00/16:00/21:30、Gemini Flash）")
-    print("  ✓ Phase 4: Layer 3a監視（15分ごと、Flash-8B）")
-    print("  ✓ Phase 5: Layer 3b緊急評価（異常検知時、Gemini Pro）")
+    print(f"  ✓ Phase 1: デイリーレビュー（06:00、{config.model_daily_analysis}）")
+    print(f"  ✓ Phase 2: 朝の詳細分析（08:00、{config.model_daily_analysis}）")
+    print(f"  ✓ Phase 3: 定期更新（12:00/16:00/21:30、{config.model_periodic_update}）")
+    print(f"  ✓ Phase 4: Layer 3a監視（15分ごと、{config.model_position_monitor}）")
+    print(f"  ✓ Phase 5: Layer 3b緊急評価（異常検知時、{config.model_daily_analysis}）")
     print()
 
     # コマンドライン引数を解析

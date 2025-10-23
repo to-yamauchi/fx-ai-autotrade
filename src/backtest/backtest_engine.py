@@ -1029,11 +1029,21 @@ class BacktestEngine:
         """
         try:
             from src.ai_analysis.ai_analyzer import AIAnalyzer
+            from src.utils.config import get_config
+
+            config = get_config()
+
+            # ログ出力：Phase 1開始
+            self.logger.info(
+                f"Phase 1 - デイリーレビュー開始: "
+                f"モデル={config.model_daily_analysis}, "
+                f"日付={review_date}"
+            )
 
             # AIAnalyzer初期化
             analyzer = AIAnalyzer(
                 symbol=self.symbol,
-                model='pro',  # 振り返りはGemini Pro使用
+                model='daily_analysis',  # デイリー分析用モデル
                 backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
                 backtest_end_date=self.end_date.strftime('%Y-%m-%d')
             )
@@ -1091,11 +1101,21 @@ class BacktestEngine:
         """
         try:
             from src.ai_analysis.ai_analyzer import AIAnalyzer
+            from src.utils.config import get_config
+
+            config = get_config()
+
+            # ログ出力：Phase 2開始
+            self.logger.info(
+                f"Phase 2 - 朝の詳細分析開始: "
+                f"モデル={config.model_daily_analysis}, "
+                f"日付={current_date}"
+            )
 
             # AIAnalyzer初期化
             analyzer = AIAnalyzer(
                 symbol=self.symbol,
-                model='pro',  # 朝の分析はGemini Pro使用
+                model='daily_analysis',  # デイリー分析用モデル
                 backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
                 backtest_end_date=self.end_date.strftime('%Y-%m-%d')
             )
@@ -1176,15 +1196,25 @@ class BacktestEngine:
         """
         try:
             from src.ai_analysis.ai_analyzer import AIAnalyzer
+            from src.utils.config import get_config
+
+            config = get_config()
 
             if not morning_strategy:
                 self.logger.warning(f"No morning strategy available for {update_time} update")
                 return None
 
-            # AIAnalyzer初期化（Gemini Flash使用）
+            # ログ出力：Phase 3開始
+            self.logger.info(
+                f"Phase 3 - 定期更新開始: "
+                f"モデル={config.model_periodic_update}, "
+                f"日付={current_date}, 時刻={update_time}"
+            )
+
+            # AIAnalyzer初期化
             analyzer = AIAnalyzer(
                 symbol=self.symbol,
-                model='flash',  # 定期更新はGemini Flash使用（コスト削減）
+                model='periodic_update',  # 定期更新用モデル
                 backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
                 backtest_end_date=self.end_date.strftime('%Y-%m-%d')
             )
@@ -1362,6 +1392,14 @@ class BacktestEngine:
         """
         try:
             from src.ai_analysis.ai_analyzer import AIAnalyzer
+            from src.utils.config import get_config
+            config = get_config()
+
+            self.logger.info(
+                f"Phase 4 - Layer 3a監視開始: "
+                f"モデル={config.model_position_monitor}, "
+                f"日付={tick_time.strftime('%Y-%m-%d')}, 時刻={tick_time.strftime('%H:%M:%S')}"
+            )
 
             if not self.simulator.open_positions:
                 return
@@ -1510,6 +1548,15 @@ class BacktestEngine:
         """
         try:
             from src.ai_analysis.ai_analyzer import AIAnalyzer
+            from src.utils.config import get_config
+            config = get_config()
+
+            self.logger.info(
+                f"Phase 5 - Layer 3b緊急評価開始: "
+                f"モデル={config.model_daily_analysis}, "
+                f"日付={tick_time.strftime('%Y-%m-%d')}, 時刻={tick_time.strftime('%H:%M:%S')}, "
+                f"異常タイプ={anomaly_info.get('type')}, 深刻度={anomaly_info.get('severity')}"
+            )
 
             # ポジションがない場合は評価不要（リスクなし）
             if not self.simulator.open_positions:
