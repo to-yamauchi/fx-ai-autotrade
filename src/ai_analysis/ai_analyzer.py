@@ -826,6 +826,20 @@ class AIAnalyzer:
                      key_levels, scenario_planning, lessons_applied, market_data,
                      backtest_start_date, backtest_end_date, created_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (strategy_date, symbol, backtest_start_date, backtest_end_date)
+                    DO UPDATE SET
+                        daily_bias = EXCLUDED.daily_bias,
+                        confidence = EXCLUDED.confidence,
+                        reasoning = EXCLUDED.reasoning,
+                        market_environment = EXCLUDED.market_environment,
+                        entry_conditions = EXCLUDED.entry_conditions,
+                        exit_strategy = EXCLUDED.exit_strategy,
+                        risk_management = EXCLUDED.risk_management,
+                        key_levels = EXCLUDED.key_levels,
+                        scenario_planning = EXCLUDED.scenario_planning,
+                        lessons_applied = EXCLUDED.lessons_applied,
+                        market_data = EXCLUDED.market_data,
+                        created_at = EXCLUDED.created_at
                 """
 
                 cursor.execute(insert_query, (
@@ -854,6 +868,20 @@ class AIAnalyzer:
                      market_environment, entry_conditions, exit_strategy, risk_management,
                      key_levels, scenario_planning, lessons_applied, market_data, created_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (strategy_date, symbol)
+                    DO UPDATE SET
+                        daily_bias = EXCLUDED.daily_bias,
+                        confidence = EXCLUDED.confidence,
+                        reasoning = EXCLUDED.reasoning,
+                        market_environment = EXCLUDED.market_environment,
+                        entry_conditions = EXCLUDED.entry_conditions,
+                        exit_strategy = EXCLUDED.exit_strategy,
+                        risk_management = EXCLUDED.risk_management,
+                        key_levels = EXCLUDED.key_levels,
+                        scenario_planning = EXCLUDED.scenario_planning,
+                        lessons_applied = EXCLUDED.lessons_applied,
+                        market_data = EXCLUDED.market_data,
+                        created_at = EXCLUDED.created_at
                 """
 
                 cursor.execute(insert_query, (
