@@ -63,7 +63,11 @@ class GeminiClient:
         Raises:
             ValueError: GEMINI_API_KEYが設定されていない場合
         """
-        self.api_key = os.getenv('GEMINI_API_KEY')
+        from src.utils.config import get_config
+
+        self.config = get_config()
+        self.api_key = self.config.gemini_api_key
+
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY environment variable is not set")
 
@@ -71,22 +75,22 @@ class GeminiClient:
         genai.configure(api_key=self.api_key)
         self.logger = logging.getLogger(__name__)
 
-        # モデル名を環境変数から取得（デフォルト値あり）
-        model_pro_name = os.getenv('GEMINI_MODEL_PRO', 'gemini-2.0-flash-exp')
-        model_flash_name = os.getenv('GEMINI_MODEL_FLASH', 'gemini-2.0-flash-exp')
-        model_flash_8b_name = os.getenv('GEMINI_MODEL_FLASH_8B', 'gemini-2.0-flash-thinking-exp-01-21')
-
         # モデルの初期化
-        # Pro: 最高精度、コスト高、速度遅
-        self.model_pro = genai.GenerativeModel(model_pro_name)
+        # Pro: 最高精度（Phase 1 & 2用）
+        self.model_pro = genai.GenerativeModel(self.config.gemini_model_pro)
 
-        # Flash: Gemini 2.0 Flash（推奨モデル）
-        self.model_flash = genai.GenerativeModel(model_flash_name)
+        # Flash: バランス型（Phase 3用）
+        self.model_flash = genai.GenerativeModel(self.config.gemini_model_flash)
 
-        # Flash-8B: 高速軽量、コスト低、精度やや劣る
-        self.model_flash_lite = genai.GenerativeModel(model_flash_8b_name)
+        # Flash-8B: 高速軽量（Phase 4用）
+        self.model_flash_lite = genai.GenerativeModel(self.config.gemini_model_flash_8b)
 
-        self.logger.info(f"✓ Gemini API initialized (Pro:{model_pro_name}, Flash:{model_flash_name}, Flash-8B:{model_flash_8b_name})")
+        self.logger.info(
+            f"✓ Gemini API initialized:\n"
+            f"  Phase 1&2 (Pro):  {self.config.gemini_model_pro}\n"
+            f"  Phase 3 (Flash):  {self.config.gemini_model_flash}\n"
+            f"  Phase 4 (8B):     {self.config.gemini_model_flash_8b}"
+        )
 
     def analyze_market(self,
                       market_data: Dict,
@@ -140,17 +144,17 @@ class GeminiClient:
         self,
         prompt: str,
         model: str = 'flash',
-        temperature: float = 0.3,
-        max_tokens: int = 2000
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None
     ) -> str:
         """
         汎用的なプロンプトに対してAI応答を生成する
 
         Args:
             prompt: AIに送信するプロンプト
-            model: 使用するモデル ('pro' / 'flash' / 'flash-lite')
-            temperature: 応答のランダム性（0.0-1.0）
-            max_tokens: 最大トークン数
+            model: 使用するモデル ('pro' / 'flash' / 'flash-8b')
+            temperature: 応答のランダム性（0.0-1.0）、Noneの場合は.envの設定を使用
+            max_tokens: 最大トークン数、Noneの場合は.envの設定を使用
 
         Returns:
             AIの応答テキスト
@@ -160,6 +164,23 @@ class GeminiClient:
         """
         # モデルの選択
         selected_model = self._select_model(model)
+
+        # パラメータのデフォルト値を設定から取得
+        if temperature is None:
+            if model == 'pro':
+                temperature = self.config.ai_temperature_pro
+            elif model == 'flash-8b' or model == 'flash-lite':
+                temperature = self.config.ai_temperature_flash_8b
+            else:
+                temperature = self.config.ai_temperature_flash
+
+        if max_tokens is None:
+            if model == 'pro':
+                max_tokens = self.config.ai_max_tokens_pro
+            elif model == 'flash-8b' or model == 'flash-lite':
+                max_tokens = self.config.ai_max_tokens_flash_8b
+            else:
+                max_tokens = self.config.ai_max_tokens_flash
 
         try:
             # 生成設定

@@ -57,47 +57,59 @@ class BacktestEngine:
 
     def __init__(
         self,
-        symbol: str = 'USDJPY',
-        start_date: str = '2024-01-01',
-        end_date: str = '2024-12-31',
-        initial_balance: float = 100000.0,
+        symbol: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        initial_balance: Optional[float] = None,
         ai_model: str = 'flash',
         sampling_interval_hours: int = 24,  # サンプリング間隔（時間）
-        risk_percent: float = 1.0,
+        risk_percent: Optional[float] = None,
         csv_path: Optional[str] = None  # CSVファイルパス（指定時はCSVを使用）
     ):
         """
         バックテストエンジンの初期化
 
         Args:
-            symbol: 通貨ペア
-            start_date: 開始日（YYYY-MM-DD）
-            end_date: 終了日（YYYY-MM-DD）
-            initial_balance: 初期残高
+            symbol: 通貨ペア（Noneの場合は.envから取得）
+            start_date: 開始日（YYYY-MM-DD、Noneの場合は.envから取得）
+            end_date: 終了日（YYYY-MM-DD、Noneの場合は.envから取得）
+            initial_balance: 初期残高（Noneの場合は.envから取得）
             ai_model: AIモデル（flash/pro/flash-8b）
             sampling_interval_hours: AI分析のサンプリング間隔（時間）
-            risk_percent: リスク許容率（%）
-            csv_path: CSVファイルパス（指定時はCSVからデータ読み込み、未指定時はMT5）
+            risk_percent: リスク許容率（%、Noneの場合は.envから取得）
+            csv_path: CSVファイルパス（指定時はCSVからデータ読み込み、未指定時はMT5または.envから取得）
         """
-        self.symbol = symbol
-        self.start_date = datetime.strptime(start_date, '%Y-%m-%d')
-        self.end_date = datetime.strptime(end_date, '%Y-%m-%d')
-        self.initial_balance = initial_balance
+        from src.utils.config import get_config
+
+        # 設定を読み込み
+        config = get_config()
+
+        # パラメータのデフォルト値を.envから取得
+        self.symbol = symbol if symbol is not None else config.backtest_symbol
+        self.start_date = datetime.strptime(
+            start_date if start_date is not None else config.backtest_start_date,
+            '%Y-%m-%d'
+        )
+        self.end_date = datetime.strptime(
+            end_date if end_date is not None else config.backtest_end_date,
+            '%Y-%m-%d'
+        )
+        self.initial_balance = initial_balance if initial_balance is not None else config.backtest_initial_balance
         self.ai_model = ai_model
         self.sampling_interval = timedelta(hours=sampling_interval_hours)
-        self.risk_percent = risk_percent
-        self.csv_path = csv_path
+        self.risk_percent = risk_percent if risk_percent is not None else config.risk_per_trade
+        self.csv_path = csv_path if csv_path is not None else config.backtest_csv_path
         self.logger = logging.getLogger(__name__)
 
         # コンポーネント初期化
-        self.simulator = TradeSimulator(initial_balance=initial_balance, symbol=symbol)
+        self.simulator = TradeSimulator(initial_balance=self.initial_balance, symbol=self.symbol)
 
         # データローダー：CSVまたはMT5
-        if csv_path:
-            self.data_loader = CSVTickLoader(csv_path=csv_path, symbol=symbol)
+        if self.csv_path:
+            self.data_loader = CSVTickLoader(csv_path=self.csv_path, symbol=self.symbol)
             self.use_csv = True
         else:
-            self.data_loader = MT5DataLoader(symbol=symbol)
+            self.data_loader = MT5DataLoader(symbol=self.symbol)
             self.use_csv = False
 
         self.rules = TradingRules()

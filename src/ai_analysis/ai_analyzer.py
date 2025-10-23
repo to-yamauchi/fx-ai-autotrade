@@ -568,12 +568,10 @@ class AIAnalyzer:
 
             self.logger.info("Calling Gemini Pro for daily review...")
 
-            # Gemini Pro呼び出し（温度0.3で再現性確保）
+            # Gemini Pro呼び出し（温度・トークン数は.envから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                temperature=0.3,
-                max_tokens=2000,
-                model='pro'  # Gemini 2.5 Pro
+                model='pro'  # Phase 1: デイリーレビュー
             )
 
             # JSONパース
@@ -733,12 +731,10 @@ class AIAnalyzer:
 
             self.logger.info("Calling Gemini Pro for morning analysis...")
 
-            # Gemini Pro呼び出し（温度0.3で再現性確保）
+            # Gemini Pro呼び出し（温度・トークン数は.envから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                temperature=0.3,
-                max_tokens=3000,
-                model='pro'  # Gemini 2.5 Pro
+                model='pro'  # Phase 2: 朝の詳細分析
             )
 
             # JSONパース
@@ -952,12 +948,10 @@ class AIAnalyzer:
 
             self.logger.info(f"Calling Gemini Flash for periodic update ({update_time})...")
 
-            # Gemini Flash呼び出し（温度0.3、コスト削減）
+            # Gemini Flash呼び出し（温度・トークン数は.envから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                temperature=0.3,
-                max_tokens=2000,
-                model='flash'  # Gemini 2.5 Flash（$0.002/call）
+                model='flash'  # Phase 3: 定期更新
             )
 
             # JSONパース
@@ -1152,14 +1146,12 @@ class AIAnalyzer:
                 daily_strategy_json=json.dumps(daily_strategy, ensure_ascii=False, indent=2)
             )
 
-            self.logger.debug("Calling Gemini Flash-Lite for Layer 3a monitoring...")
+            self.logger.debug("Calling Gemini Flash-8B for Layer 3a monitoring...")
 
-            # Gemini Flash-Lite呼び出し（超軽量、温度0.2）
+            # Gemini Flash-8B呼び出し（温度・トークン数は.envから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                temperature=0.2,
-                max_tokens=500,  # 短い応答
-                model='flash-8b'  # Gemini 2.5 Flash-8B（$0.0003/call）
+                model='flash-8b'  # Phase 4: Layer 3a監視
             )
 
             # JSONパース
@@ -1341,12 +1333,10 @@ class AIAnalyzer:
 
             self.logger.warning("Calling Gemini Pro for Layer 3b emergency evaluation...")
 
-            # Gemini Pro呼び出し（高精度、温度0.2で冷静な判断）
+            # Gemini Pro呼び出し（温度・トークン数は.envから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                temperature=0.2,
-                max_tokens=1500,
-                model='pro'  # Gemini 2.5 Pro（緊急時は高精度）
+                model='pro'  # Phase 5: Layer 3b緊急評価
             )
 
             # JSONパース
