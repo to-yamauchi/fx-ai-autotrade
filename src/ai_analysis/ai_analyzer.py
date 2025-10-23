@@ -886,6 +886,225 @@ class AIAnalyzer:
             self.logger.error(f"Failed to save morning analysis to database: {e}")
             return False
 
+    def periodic_update(
+        self,
+        morning_strategy: Dict,
+        current_market_data: Dict,
+        today_trades: List[Dict],
+        current_positions: List[Dict],
+        update_time: str  # "12:00", "16:00", "21:30"
+    ) -> Dict:
+        """
+        定期更新を実行（12:00/16:00/21:30、Gemini Flash）
+
+        Args:
+            morning_strategy: 朝の詳細分析で生成された戦略
+            current_market_data: 現在の市場データ（標準化済み）
+            today_trades: 本日のトレード実績
+            current_positions: 現在のポジション状況
+            update_time: 更新時刻（"12:00", "16:00", "21:30"）
+
+        Returns:
+            更新結果の辞書
+            {
+                'update_type': 'no_change' | 'bias_change' | 'risk_adjustment' | ...,
+                'market_assessment': {...},
+                'strategy_validity': {...},
+                'recommended_changes': {...},
+                'current_positions_action': {...},
+                'new_entry_recommendation': {...}
+            }
+        """
+        try:
+            self.logger.info(f"Starting periodic update at {update_time}...")
+
+            # デフォルト値の設定
+            if not morning_strategy:
+                morning_strategy = {
+                    'daily_bias': 'NEUTRAL',
+                    'confidence': 0.5,
+                    'entry_conditions': {},
+                    'exit_strategy': {},
+                    'risk_management': {}
+                }
+
+            # プロンプトテンプレートの読み込み
+            prompt_path = os.path.join(
+                os.path.dirname(__file__),
+                'prompts',
+                'periodic_update.txt'
+            )
+
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                prompt_template = f.read()
+
+            # データを埋め込む
+            import json
+            prompt = prompt_template.format(
+                morning_strategy_json=json.dumps(morning_strategy, ensure_ascii=False, indent=2),
+                current_market_json=json.dumps(current_market_data, ensure_ascii=False, indent=2),
+                today_trades_json=json.dumps(today_trades, ensure_ascii=False, indent=2),
+                current_positions_json=json.dumps(current_positions, ensure_ascii=False, indent=2),
+                update_time=update_time
+            )
+
+            self.logger.info(f"Calling Gemini Flash for periodic update ({update_time})...")
+
+            # Gemini Flash呼び出し（温度0.3、コスト削減）
+            response = self.gemini_client.generate_response(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=2000,
+                model='flash'  # Gemini 2.5 Flash（$0.002/call）
+            )
+
+            # JSONパース
+            import re
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = response
+
+            update_result = json.loads(json_str)
+
+            self.logger.info(
+                f"Periodic update completed at {update_time}. "
+                f"Type: {update_result.get('update_type', 'N/A')}"
+            )
+
+            # データベースに保存
+            self._save_periodic_update_to_database(update_result, update_time, current_market_data)
+
+            return update_result
+
+        except Exception as e:
+            self.logger.error(f"Periodic update failed at {update_time}: {e}", exc_info=True)
+            # フォールバック：変更なし
+            return {
+                'update_type': 'no_change',
+                'market_assessment': {
+                    'trend_change': '不明',
+                    'volatility_change': '不明',
+                    'key_events': []
+                },
+                'strategy_validity': {
+                    'morning_bias_valid': True,
+                    'confidence_change': 0.0,
+                    'reasoning': f'分析エラーのため朝の戦略を継続: {str(e)}'
+                },
+                'recommended_changes': {
+                    'bias': {'apply': False},
+                    'risk_management': {},
+                    'exit_strategy': {}
+                },
+                'current_positions_action': {
+                    'keep_open': True,
+                    'close_reason': '',
+                    'adjust_sl': {'apply': False}
+                },
+                'new_entry_recommendation': {
+                    'should_enter_now': False,
+                    'direction': None,
+                    'reason': '分析エラー'
+                },
+                'summary': '分析エラーのため変更なし',
+                'error': str(e)
+            }
+
+    def _save_periodic_update_to_database(
+        self,
+        update_result: Dict,
+        update_time: str,
+        market_data: Dict
+    ) -> bool:
+        """
+        定期更新結果をデータベースに保存
+
+        Args:
+            update_result: 更新結果
+            update_time: 更新時刻（"12:00", "16:00", "21:30"）
+            market_data: 市場データ
+
+        Returns:
+            成功時True
+        """
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+
+            # テーブル名取得（モード別）
+            table_name = self.table_names.get('periodic_updates', 'backtest_periodic_updates')
+
+            # バックテストモードの場合は追加カラムを含める
+            if self.mode_config.is_backtest():
+                if not self.backtest_start_date or not self.backtest_end_date:
+                    self.logger.warning(
+                        "Backtest mode but backtest dates not provided. Skipping database save."
+                    )
+                    return False
+
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (update_date, update_time, symbol, update_type,
+                     market_assessment, strategy_validity, recommended_changes,
+                     positions_action, entry_recommendation, summary, market_data,
+                     backtest_start_date, backtest_end_date, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now().date(),
+                    update_time,
+                    self.symbol,
+                    update_result.get('update_type', 'no_change'),
+                    Json(update_result.get('market_assessment', {})),
+                    Json(update_result.get('strategy_validity', {})),
+                    Json(update_result.get('recommended_changes', {})),
+                    Json(update_result.get('current_positions_action', {})),
+                    Json(update_result.get('new_entry_recommendation', {})),
+                    update_result.get('summary', ''),
+                    Json(market_data),
+                    self.backtest_start_date,
+                    self.backtest_end_date,
+                    datetime.now()
+                ))
+            else:
+                # DEMOモード/本番モード
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (update_date, update_time, symbol, update_type,
+                     market_assessment, strategy_validity, recommended_changes,
+                     positions_action, entry_recommendation, summary, market_data, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now().date(),
+                    update_time,
+                    self.symbol,
+                    update_result.get('update_type', 'no_change'),
+                    Json(update_result.get('market_assessment', {})),
+                    Json(update_result.get('strategy_validity', {})),
+                    Json(update_result.get('recommended_changes', {})),
+                    Json(update_result.get('current_positions_action', {})),
+                    Json(update_result.get('new_entry_recommendation', {})),
+                    update_result.get('summary', ''),
+                    Json(market_data),
+                    datetime.now()
+                ))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            self.logger.info(f"Periodic update saved to database ({table_name})")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to save periodic update to database: {e}")
+            return False
+
 
 # モジュールのエクスポート
 __all__ = ['AIAnalyzer']

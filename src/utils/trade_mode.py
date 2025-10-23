@@ -97,7 +97,8 @@ class TradeModeConfig:
                     'ai_judgments': テーブル名,
                     'positions': テーブル名,
                     'reviews': テーブル名,
-                    'strategies': テーブル名
+                    'strategies': テーブル名,
+                    'periodic_updates': テーブル名
                 }
         """
         table_mapping = {
@@ -105,19 +106,22 @@ class TradeModeConfig:
                 'ai_judgments': 'backtest_ai_judgments',
                 'positions': 'backtest_positions',
                 'reviews': 'backtest_daily_reviews',
-                'strategies': 'backtest_daily_strategies'
+                'strategies': 'backtest_daily_strategies',
+                'periodic_updates': 'backtest_periodic_updates'
             },
             TradeMode.DEMO: {
                 'ai_judgments': 'demo_ai_judgments',
                 'positions': 'demo_positions',
                 'reviews': 'demo_daily_reviews',
-                'strategies': 'demo_daily_strategies'
+                'strategies': 'demo_daily_strategies',
+                'periodic_updates': 'demo_periodic_updates'
             },
             TradeMode.LIVE: {
                 'ai_judgments': 'ai_judgments',
                 'positions': 'positions',
                 'reviews': 'daily_reviews',
-                'strategies': 'daily_strategies'
+                'strategies': 'daily_strategies',
+                'periodic_updates': 'periodic_updates'
             }
         }
 

@@ -220,17 +220,36 @@ class BacktestEngine:
                     f"Should trade: {strategy_result.get('entry_conditions', {}).get('should_trade', False)}"
                 )
 
-            # === 1日分のトレード実行 ===
-            # TODO: 本来は12:00/16:00/21:30に定期更新（Gemini Flash）を実施
-            # 現在は簡易版として朝の戦略に基づいてトレード判断
-            current_time = datetime.combine(current_date, datetime.min.time())
-
             # 朝の戦略に基づいてトレード判断
+            current_time = datetime.combine(current_date, datetime.min.time())
             if strategy_result and strategy_result.get('entry_conditions', {}).get('should_trade', False):
-                # 戦略を基にトレード実行
                 self._execute_trade_from_strategy(strategy_result, current_time)
             else:
-                self.logger.info("No trade signal from morning analysis (should_trade=False or NEUTRAL)")
+                self.logger.info("No trade signal from morning analysis")
+
+            # === 12:00 定期更新（Gemini Flash） ===
+            self.logger.info("12:00 - Running periodic update...")
+            strategy_result = self._run_periodic_update(
+                current_date=current_date,
+                update_time="12:00",
+                morning_strategy=strategy_result
+            )
+
+            # === 16:00 定期更新（Gemini Flash） ===
+            self.logger.info("16:00 - Running periodic update...")
+            strategy_result = self._run_periodic_update(
+                current_date=current_date,
+                update_time="16:00",
+                morning_strategy=strategy_result
+            )
+
+            # === 21:30 定期更新（Gemini Flash） ===
+            self.logger.info("21:30 - Running periodic update...")
+            strategy_result = self._run_periodic_update(
+                current_date=current_date,
+                update_time="21:30",
+                morning_strategy=strategy_result
+            )
 
             # 市場価格を更新（既存ポジションのSL/TPチェック）
             # 当日の全ティックをチェック
@@ -639,6 +658,184 @@ class BacktestEngine:
         except Exception as e:
             self.logger.error(f"Morning analysis failed: {e}", exc_info=True)
             return None
+
+    def _run_periodic_update(
+        self,
+        current_date: date,
+        update_time: str,  # "12:00", "16:00", "21:30"
+        morning_strategy: Optional[Dict] = None
+    ) -> Optional[Dict]:
+        """
+        定期更新を実行（12:00/16:00/21:30、Gemini Flash）
+
+        Args:
+            current_date: 更新対象日
+            update_time: 更新時刻（"12:00", "16:00", "21:30"）
+            morning_strategy: 朝の戦略（または前回の更新結果）
+
+        Returns:
+            更新後の戦略、失敗時は元の戦略を返す
+        """
+        try:
+            from src.ai_analysis.ai_analyzer import AIAnalyzer
+
+            if not morning_strategy:
+                self.logger.warning(f"No morning strategy available for {update_time} update")
+                return None
+
+            # AIAnalyzer初期化（Gemini Flash使用）
+            analyzer = AIAnalyzer(
+                symbol=self.symbol,
+                model='flash',  # 定期更新はGemini Flash使用（コスト削減）
+                backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
+                backtest_end_date=self.end_date.strftime('%Y-%m-%d')
+            )
+
+            # 現在の市場データを取得
+            tick_data = analyzer._load_tick_data()
+            if not tick_data:
+                self.logger.warning(f"Failed to load tick data for {update_time} update")
+                return morning_strategy
+
+            timeframe_data = analyzer._convert_timeframes(tick_data)
+            if not timeframe_data:
+                self.logger.warning(f"Failed to convert timeframes for {update_time} update")
+                return morning_strategy
+
+            indicators = analyzer._calculate_indicators(timeframe_data)
+            if not indicators:
+                self.logger.warning(f"Failed to calculate indicators for {update_time} update")
+                return morning_strategy
+
+            current_market_data = analyzer.data_standardizer.standardize_for_ai(
+                timeframe_data=timeframe_data,
+                indicators=indicators
+            )
+            current_market_data['symbol'] = self.symbol
+
+            # 本日のトレード履歴を取得
+            today_trades = self._get_trades_for_date(current_date)
+
+            # 現在のポジション状況を取得
+            current_positions = []
+            for pos in self.simulator.open_positions:
+                current_positions.append({
+                    'direction': pos.get('action'),
+                    'entry_price': pos.get('entry_price'),
+                    'entry_time': pos.get('entry_time').isoformat() if pos.get('entry_time') else None,
+                    'current_profit_pips': pos.get('unrealized_pips', 0),
+                    'stop_loss': pos.get('stop_loss'),
+                    'take_profit': pos.get('take_profit')
+                })
+
+            # 定期更新を実行
+            update_result = analyzer.periodic_update(
+                morning_strategy=morning_strategy,
+                current_market_data=current_market_data,
+                today_trades=today_trades,
+                current_positions=current_positions,
+                update_time=update_time
+            )
+
+            if update_result:
+                self.logger.info(
+                    f"{update_time} update completed. "
+                    f"Type: {update_result.get('update_type', 'N/A')}, "
+                    f"Summary: {update_result.get('summary', 'N/A')[:50]}..."
+                )
+
+                # 推奨変更を適用して戦略を更新
+                updated_strategy = self._apply_periodic_changes(
+                    morning_strategy,
+                    update_result,
+                    current_date,
+                    update_time
+                )
+
+                return updated_strategy
+
+            return morning_strategy
+
+        except Exception as e:
+            self.logger.error(f"Periodic update failed at {update_time}: {e}", exc_info=True)
+            return morning_strategy
+
+    def _apply_periodic_changes(
+        self,
+        current_strategy: Dict,
+        update_result: Dict,
+        current_date: date,
+        update_time: str
+    ) -> Dict:
+        """
+        定期更新の推奨変更を現在の戦略に適用
+
+        Args:
+            current_strategy: 現在の戦略
+            update_result: 定期更新結果
+            current_date: 更新日
+            update_time: 更新時刻
+
+        Returns:
+            更新後の戦略
+        """
+        updated_strategy = current_strategy.copy()
+        recommended_changes = update_result.get('recommended_changes', {})
+
+        # バイアス変更の適用
+        bias_change = recommended_changes.get('bias', {})
+        if bias_change.get('apply', False):
+            old_bias = updated_strategy.get('daily_bias', 'NEUTRAL')
+            new_bias = bias_change.get('to', old_bias)
+            updated_strategy['daily_bias'] = new_bias
+            self.logger.info(f"{update_time}: Bias changed from {old_bias} to {new_bias}")
+
+        # リスク管理の調整
+        risk_changes = recommended_changes.get('risk_management', {})
+        if 'position_size_multiplier' in risk_changes:
+            multiplier = risk_changes['position_size_multiplier']
+            if multiplier.get('apply', False):
+                old_value = updated_strategy.get('risk_management', {}).get('position_size_multiplier', 1.0)
+                new_value = multiplier.get('to', old_value)
+                if 'risk_management' not in updated_strategy:
+                    updated_strategy['risk_management'] = {}
+                updated_strategy['risk_management']['position_size_multiplier'] = new_value
+                self.logger.info(
+                    f"{update_time}: Position size multiplier changed from {old_value} to {new_value}"
+                )
+
+        # 決済戦略の調整
+        exit_changes = recommended_changes.get('exit_strategy', {})
+        if exit_changes.get('stop_loss', {}).get('apply', False):
+            sl_action = exit_changes['stop_loss'].get('action')
+            self.logger.info(f"{update_time}: Stop loss adjustment: {sl_action}")
+
+        # 既存ポジションのアクション
+        positions_action = update_result.get('current_positions_action', {})
+        if not positions_action.get('keep_open', True):
+            close_reason = positions_action.get('close_reason', '定期更新による決済')
+            self.logger.info(f"{update_time}: Closing all positions - {close_reason}")
+            self.simulator.close_all_positions(reason=close_reason)
+
+        # 新規エントリー推奨
+        entry_rec = update_result.get('new_entry_recommendation', {})
+        if entry_rec.get('should_enter_now', False):
+            direction = entry_rec.get('direction')
+            if direction and direction != 'NEUTRAL':
+                self.logger.info(
+                    f"{update_time}: New entry recommended - {direction} - {entry_rec.get('reason', '')}"
+                )
+                # 新規エントリー用に戦略を更新
+                if 'entry_conditions' not in updated_strategy:
+                    updated_strategy['entry_conditions'] = {}
+                updated_strategy['entry_conditions']['should_trade'] = True
+                updated_strategy['entry_conditions']['direction'] = direction
+
+                # エントリー実行
+                current_time = datetime.combine(current_date, datetime.min.time())
+                self._execute_trade_from_strategy(updated_strategy, current_time)
+
+        return updated_strategy
 
     def _calculate_past_statistics(self, current_date: date, days: int = 5) -> Dict:
         """
