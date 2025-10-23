@@ -206,6 +206,32 @@ def main():
     os.environ['BACKTEST_END_DATE'] = end_date.strftime('%Y-%m-%d')
     os.environ['BACKTEST_SYMBOL'] = symbol
 
+    # Gemini API接続チェック
+    print("=" * 80)
+    print("環境チェック")
+    print("=" * 80)
+    try:
+        from src.ai_analysis import GeminiClient
+        gemini_client = GeminiClient()
+        if not gemini_client.test_connection(verbose=True):
+            print("")
+            print("❌ Gemini APIへの接続に失敗しました。")
+            print("   以下を確認してください：")
+            print("   1. .envファイルにGEMINI_API_KEYが正しく設定されているか")
+            print("   2. APIキーが有効か（https://aistudio.google.com/app/apikey で確認）")
+            print("   3. Geminiモデル名が正しいか（GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, GEMINI_MODEL_FLASH_8B）")
+            print("   4. インターネット接続が正常か")
+            print("")
+            return 1
+    except Exception as e:
+        print(f"❌ Gemini APIの初期化に失敗しました: {e}")
+        print("")
+        print("   .envファイルを確認してください。")
+        print("")
+        return 1
+
+    print("")
+
     # APIコスト推定
     cost_estimate = calculate_api_costs(days)
 

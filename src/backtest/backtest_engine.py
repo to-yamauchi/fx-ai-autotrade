@@ -116,7 +116,28 @@ class BacktestEngine:
             'client_encoding': 'UTF8'
         }
 
-        self.logger.info(
+        # Gemini API接続チェック
+        print("🔌 Gemini API接続チェック中...", end='', flush=True)
+        try:
+            from src.ai_analysis import GeminiClient
+            self.gemini_client = GeminiClient()
+            if not self.gemini_client.test_connection(verbose=False):
+                print(" ❌ 失敗")
+                print("")
+                print("Gemini APIへの接続に失敗しました。")
+                print("以下を確認してください：")
+                print("  1. .envファイルにGEMINI_API_KEYが設定されているか")
+                print("  2. Geminiモデル名が正しいか")
+                print("  3. インターネット接続が正常か")
+                print("")
+                raise ConnectionError("Gemini API connection failed")
+            print(" ✓")
+        except Exception as e:
+            if "ConnectionError" not in str(type(e).__name__):
+                print(f" ❌ エラー: {e}")
+            raise
+
+        self.logger.debug(
             f"BacktestEngine initialized: "
             f"{start_date} to {end_date}, "
             f"model={ai_model}, "

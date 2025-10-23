@@ -296,27 +296,39 @@ class GeminiClient:
                 'reasoning': f'Failed to parse AI response: {str(e)}'
             }
 
-    def test_connection(self) -> bool:
+    def test_connection(self, verbose: bool = False) -> bool:
         """
         Gemini APIへの接続テスト
 
         簡単なプロンプトを送信してAPIが正常に動作するか確認します。
 
+        Args:
+            verbose: 詳細なログを出力するかどうか
+
         Returns:
             True: 接続成功, False: 接続失敗
         """
         try:
+            if verbose:
+                print("🔌 Gemini API接続テスト中...", end='', flush=True)
+
             test_prompt = "Hello, this is a connection test. Please respond with 'OK'."
             response = self.model_flash.generate_content(test_prompt)
 
             if response.text:
-                self.logger.info("Gemini API connection test successful")
+                if verbose:
+                    print(" ✓ 接続成功")
                 return True
             else:
+                if verbose:
+                    print(" ❌ 失敗（空のレスポンス）")
                 self.logger.error("Gemini API connection test failed: empty response")
                 return False
 
         except Exception as e:
+            if verbose:
+                print(f" ❌ 失敗")
+                print(f"   エラー: {e}")
             self.logger.error(f"Gemini API connection test failed: {e}")
             return False
 
