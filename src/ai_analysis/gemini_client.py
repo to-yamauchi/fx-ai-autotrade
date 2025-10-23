@@ -65,6 +65,7 @@ class GeminiClient:
         """
         from src.utils.config import get_config
 
+        # .envから設定を強制的に読み込み
         self.config = get_config()
         self.api_key = self.config.gemini_api_key
 
@@ -75,7 +76,10 @@ class GeminiClient:
         genai.configure(api_key=self.api_key)
         self.logger = logging.getLogger(__name__)
 
-        # モデルの初期化
+        # デバッグ: 実際に読み込まれたモデル名を確認
+        self.logger.debug(f"Config loaded - PRO: {self.config.gemini_model_pro}, FLASH: {self.config.gemini_model_flash}, 8B: {self.config.gemini_model_flash_8b}")
+
+        # モデルの初期化（.envの値を使用）
         # Pro: 最高精度（Phase 1 & 2用）
         self.model_pro = genai.GenerativeModel(self.config.gemini_model_pro)
 
@@ -85,12 +89,14 @@ class GeminiClient:
         # Flash-8B: 高速軽量（Phase 4用）
         self.model_flash_lite = genai.GenerativeModel(self.config.gemini_model_flash_8b)
 
-        self.logger.info(
+        # ログとコンソール両方に出力
+        init_message = (
             f"✓ Gemini API initialized:\n"
             f"  Phase 1&2 (Pro):  {self.config.gemini_model_pro}\n"
             f"  Phase 3 (Flash):  {self.config.gemini_model_flash}\n"
             f"  Phase 4 (8B):     {self.config.gemini_model_flash_8b}"
         )
+        self.logger.info(init_message)
 
     def analyze_market(self,
                       market_data: Dict,
