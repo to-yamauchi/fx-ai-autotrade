@@ -308,8 +308,8 @@ def run_live_mode():
 
 def main():
     """メインエントリーポイント"""
-    # .envファイルを読み込み
-    load_dotenv()
+    # .envファイルを読み込み（システム環境変数を上書き）
+    load_dotenv(override=True)
 
     # ログ設定
     setup_logging()
