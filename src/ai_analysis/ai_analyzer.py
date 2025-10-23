@@ -367,15 +367,17 @@ class AIAnalyzer:
             table_name = self.table_names['ai_judgments']
 
             # ai_judgmentsテーブルに保存
+            # timeframeは複数時間足を統合分析しているため'MULTI'を設定
             insert_query = f"""
                 INSERT INTO {table_name}
-                (timestamp, symbol, action, confidence, reasoning, market_data)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                (timestamp, symbol, timeframe, action, confidence, reasoning, market_data)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
 
             cursor.execute(insert_query, (
                 datetime.now(),
                 ai_result.get('symbol', self.symbol),
+                'MULTI',  # 複数時間足統合分析
                 ai_result.get('action', 'HOLD'),
                 ai_result.get('confidence', 0),
                 ai_result.get('reasoning', ''),
