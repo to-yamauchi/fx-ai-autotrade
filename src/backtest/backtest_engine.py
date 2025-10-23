@@ -143,11 +143,12 @@ class BacktestEngine:
         self.logger.info("Loading historical data...")
 
         if self.use_csv:
-            # CSVファイルから読み込み
+            # CSVファイルから読み込み（AI分析用に30日のバッファを含む）
             self.logger.info(f"Using CSV file: {self.csv_path}")
             tick_df = self.data_loader.load_ticks(
                 start_date=self.start_date.strftime('%Y-%m-%d'),
-                end_date=self.end_date.strftime('%Y-%m-%d')
+                end_date=self.end_date.strftime('%Y-%m-%d'),
+                history_days=30  # AI分析に必要な過去データ
             )
         else:
             # MT5から読み込み
