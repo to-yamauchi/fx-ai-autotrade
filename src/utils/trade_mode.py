@@ -45,12 +45,22 @@ class TradeModeConfig:
     def __init__(self):
         """初期化"""
         # 環境変数からモードを取得
-        mode_str = os.getenv('TRADE_MODE', 'demo').lower()
+        mode_str = os.getenv('TRADE_MODE', 'demo')
+
+        # 値をクリーンアップ（前後の空白除去、コメント除去、小文字変換）
+        if mode_str:
+            # コメント（#）以降を削除
+            if '#' in mode_str:
+                mode_str = mode_str.split('#')[0]
+            # 前後の空白を除去して小文字に変換
+            mode_str = mode_str.strip().lower()
+        else:
+            mode_str = 'demo'
 
         # モードの検証
         if mode_str not in ['backtest', 'demo', 'live']:
             raise ValueError(
-                f"Invalid TRADE_MODE: {mode_str}. "
+                f"Invalid TRADE_MODE: '{mode_str}'. "
                 f"Must be one of: backtest, demo, live"
             )
 
