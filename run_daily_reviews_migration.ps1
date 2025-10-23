@@ -27,7 +27,7 @@ $DB_NAME = if ($env:DB_NAME) { $env:DB_NAME } else { "fx_autotrade" }
 $DB_USER = if ($env:DB_USER) { $env:DB_USER } else { "postgres" }
 $DB_PASSWORD = $env:DB_PASSWORD
 
-Write-Host "Database: $DB_HOST:$DB_PORT/$DB_NAME" -ForegroundColor Cyan
+Write-Host "Database: ${DB_HOST}:${DB_PORT}/${DB_NAME}" -ForegroundColor Cyan
 Write-Host ""
 
 # Check if psql is available

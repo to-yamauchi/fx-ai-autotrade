@@ -34,7 +34,7 @@ $DB_NAME = $env:DB_NAME
 $DB_USER = $env:DB_USER
 $DB_PASSWORD = $env:DB_PASSWORD
 
-Write-Host "Database: $DB_NAME@$DB_HOST:$DB_PORT" -ForegroundColor Yellow
+Write-Host "Database: ${DB_NAME}@${DB_HOST}:${DB_PORT}" -ForegroundColor Yellow
 Write-Host "User: $DB_USER" -ForegroundColor Yellow
 Write-Host ""
 
