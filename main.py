@@ -34,6 +34,7 @@ from src.utils.startup_checker import StartupChecker
 from src.utils.trade_mode import get_trade_mode_config
 from src.ai_analysis.ai_analyzer import AIAnalyzer
 from src.trade_execution.position_manager import PositionManager
+from src.monitoring.monitor_orchestrator import MonitorOrchestrator
 
 
 def setup_logging():
@@ -113,6 +114,11 @@ def run_demo_mode():
     # シンボル設定
     symbol = 'USDJPY'
 
+    # モニタリングシステムの初期化
+    logger.info("3層モニタリングシステムを初期化中...")
+    orchestrator = MonitorOrchestrator(symbol=symbol, ai_model='flash')
+    logger.info("")
+
     # AI分析の実行
     logger.info("リアルタイムデータでAI分析を実行中...")
     analyzer = AIAnalyzer(symbol=symbol, model='flash')
@@ -130,9 +136,49 @@ def run_demo_mode():
 
     if result['success']:
         logger.info(f"[成功] トレード成功: ticket={result['ticket']}")
+        logger.info("")
+
+        # トレード成功時はモニタリングを開始
+        logger.info("トレード成功！モニタリングシステムを起動します...")
+        logger.info("")
+
+        orchestrator.start_all()
+
+        # ポジションを登録
+        orchestrator.register_position_entry(
+            ticket=result['ticket'],
+            action=ai_result['action'],
+            confidence=ai_result.get('confidence', 0),
+            reasoning=ai_result.get('reasoning', '')
+        )
+        logger.info("")
+
+        # モニタリングステータス表示
+        logger.info("モニタリングシステムが起動しました。")
+        logger.info("以下の3層でポジションを監視します：")
+        logger.info("  - Layer 1: 緊急停止（100ms間隔、50pips SL、口座2%損失）")
+        logger.info("  - Layer 2: 異常検知（5分間隔、DD10%、逆行8pips、スプレッド5pips）")
+        logger.info("  - Layer 3: AI再評価（30分間隔、判断反転、信頼度60%）")
+        logger.info("")
+        logger.info("Ctrl+Cで終了します...")
+        logger.info("")
+
+        try:
+            # モニタリングを継続（ユーザーが中断するまで）
+            import time
+            while True:
+                time.sleep(60)  # 1分ごとにステータス表示
+                orchestrator.print_status()
+        except KeyboardInterrupt:
+            logger.info("")
+            logger.info("ユーザーによる中断を検知")
+            logger.info("")
+        finally:
+            # モニタリング停止
+            orchestrator.stop_all()
     else:
         logger.warning(f"[失敗] トレード失敗: {result['message']}")
-    logger.info("")
+        logger.info("")
 
     # サマリー表示
     logger.info("=" * 80)
@@ -162,6 +208,11 @@ def run_live_mode():
     # シンボル設定
     symbol = 'USDJPY'
 
+    # モニタリングシステムの初期化
+    logger.info("3層モニタリングシステムを初期化中...")
+    orchestrator = MonitorOrchestrator(symbol=symbol, ai_model='flash')
+    logger.info("")
+
     # AI分析の実行
     logger.info("リアルタイムデータでAI分析を実行中...")
     analyzer = AIAnalyzer(symbol=symbol, model='flash')
@@ -179,9 +230,49 @@ def run_live_mode():
 
     if result['success']:
         logger.info(f"[成功] トレード成功: ticket={result['ticket']}")
+        logger.info("")
+
+        # トレード成功時はモニタリングを開始
+        logger.info("トレード成功！モニタリングシステムを起動します...")
+        logger.info("")
+
+        orchestrator.start_all()
+
+        # ポジションを登録
+        orchestrator.register_position_entry(
+            ticket=result['ticket'],
+            action=ai_result['action'],
+            confidence=ai_result.get('confidence', 0),
+            reasoning=ai_result.get('reasoning', '')
+        )
+        logger.info("")
+
+        # モニタリングステータス表示
+        logger.info("モニタリングシステムが起動しました。")
+        logger.info("以下の3層でポジションを監視します：")
+        logger.info("  - Layer 1: 緊急停止（100ms間隔、50pips SL、口座2%損失）")
+        logger.info("  - Layer 2: 異常検知（5分間隔、DD10%、逆行8pips、スプレッド5pips）")
+        logger.info("  - Layer 3: AI再評価（30分間隔、判断反転、信頼度60%）")
+        logger.info("")
+        logger.warning("⚠ 本番モードで監視中！Ctrl+Cで終了します...")
+        logger.info("")
+
+        try:
+            # モニタリングを継続（ユーザーが中断するまで）
+            import time
+            while True:
+                time.sleep(60)  # 1分ごとにステータス表示
+                orchestrator.print_status()
+        except KeyboardInterrupt:
+            logger.info("")
+            logger.info("ユーザーによる中断を検知")
+            logger.info("")
+        finally:
+            # モニタリング停止
+            orchestrator.stop_all()
     else:
         logger.warning(f"[失敗] トレード失敗: {result['message']}")
-    logger.info("")
+        logger.info("")
 
     # サマリー表示
     logger.info("=" * 80)
