@@ -130,11 +130,20 @@ class BacktestEngine:
         # 1. 全期間のデータを取得
         self.logger.info("Loading historical data...")
         days = (self.end_date - self.start_date).days
-        tick_data = self.data_loader.fetch_tick_data(days=days + 30)  # 余裕を持って取得
+        tick_df = self.data_loader.load_recent_ticks(days=days + 30)  # 余裕を持って取得
 
-        if not tick_data:
+        if tick_df is None or tick_df.empty:
             self.logger.error("Failed to load historical data")
             return {}
+
+        # DataFrameをリストに変換
+        tick_data = []
+        for idx, row in tick_df.iterrows():
+            tick_data.append({
+                'time': row['time'],
+                'bid': row['bid'],
+                'ask': row['ask']
+            })
 
         self.logger.info(f"Loaded {len(tick_data)} ticks")
         self.logger.info("")
