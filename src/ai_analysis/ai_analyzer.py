@@ -511,6 +511,156 @@ class AIAnalyzer:
             self.logger.error(f"Failed to get recent judgments: {e}")
             return []
 
+    def daily_review(
+        self,
+        previous_day_trades: List[Dict],
+        prediction: Optional[Dict] = None,
+        actual_market: Optional[Dict] = None,
+        statistics: Optional[Dict] = None
+    ) -> Dict:
+        """
+        前日のトレード結果を振り返り、分析結果を生成
+
+        Args:
+            previous_day_trades: 前日のトレード結果リスト
+            prediction: 前日の予測内容
+            actual_market: 実際の市場動向
+            statistics: 統計情報
+
+        Returns:
+            振り返り結果の辞書
+            {
+                'score': {...},
+                'analysis': {...},
+                'lessons_for_today': [...],
+                'pattern_recognition': {...}
+            }
+        """
+        try:
+            self.logger.info("Starting daily review...")
+
+            # デフォルト値の設定
+            if prediction is None:
+                prediction = {'daily_bias': 'NEUTRAL', 'confidence': 0.5}
+            if actual_market is None:
+                actual_market = {'direction': '不明', 'volatility': '中程度'}
+            if statistics is None:
+                statistics = {'total_pips': 0, 'win_rate': '0%', 'max_drawdown': '0pips'}
+
+            # プロンプトテンプレートの読み込み
+            prompt_path = os.path.join(
+                os.path.dirname(__file__),
+                'prompts',
+                'daily_review.txt'
+            )
+
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                prompt_template = f.read()
+
+            # データを埋め込む
+            import json
+            prompt = prompt_template.format(
+                trades_json=json.dumps(previous_day_trades, ensure_ascii=False, indent=2),
+                prediction_json=json.dumps(prediction, ensure_ascii=False, indent=2),
+                actual_market_json=json.dumps(actual_market, ensure_ascii=False, indent=2),
+                statistics_json=json.dumps(statistics, ensure_ascii=False, indent=2)
+            )
+
+            self.logger.info("Calling Gemini Pro for daily review...")
+
+            # Gemini Pro呼び出し（温度0.3で再現性確保）
+            response = self.gemini_client.generate_response(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=2000,
+                model='pro'  # Gemini 2.5 Pro
+            )
+
+            # JSONパース
+            import re
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = response
+
+            review_result = json.loads(json_str)
+
+            self.logger.info(f"Daily review completed. Total score: {review_result.get('score', {}).get('total', 'N/A')}")
+
+            # データベースに保存
+            self._save_review_to_database(review_result, previous_day_trades)
+
+            return review_result
+
+        except Exception as e:
+            self.logger.error(f"Daily review failed: {e}", exc_info=True)
+            return {
+                'score': {'total': '0/100点', 'comment': 'エラーにより評価不可'},
+                'analysis': {
+                    'what_worked': [],
+                    'what_failed': [],
+                    'missed_signals': []
+                },
+                'lessons_for_today': [],
+                'pattern_recognition': {
+                    'success_patterns': [],
+                    'failure_patterns': []
+                },
+                'error': str(e)
+            }
+
+    def _save_review_to_database(self, review_result: Dict, trades: List[Dict]) -> bool:
+        """
+        振り返り結果をデータベースに保存
+
+        Args:
+            review_result: 振り返り結果
+            trades: トレードリスト
+
+        Returns:
+            成功時True
+        """
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+
+            # バックテストモードの場合のテーブル名
+            table_name = self.table_names.get('reviews', 'backtest_daily_reviews')
+
+            # daily_reviewsテーブルに保存
+            insert_query = f"""
+                INSERT INTO {table_name}
+                (review_date, symbol, total_score, score_breakdown, analysis,
+                 lessons, patterns, trades_count, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+
+            review_date = datetime.now().date()
+
+            cursor.execute(insert_query, (
+                review_date,
+                self.symbol,
+                review_result.get('score', {}).get('total', '0/100点'),
+                Json(review_result.get('score', {})),
+                Json(review_result.get('analysis', {})),
+                Json(review_result.get('lessons_for_today', [])),
+                Json(review_result.get('pattern_recognition', {})),
+                len(trades),
+                datetime.now()
+            ))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            self.logger.info(f"Daily review saved to database ({table_name})")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to save review to database: {e}")
+            return False
+
 
 # モジュールのエクスポート
 __all__ = ['AIAnalyzer']
