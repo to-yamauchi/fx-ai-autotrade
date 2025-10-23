@@ -120,6 +120,9 @@ class BacktestEngine:
         self.current_time: Optional[datetime] = None
         self.trade_history: List[Dict] = []
 
+        # レポートデータ保存用
+        self.daily_reports: Dict[str, Dict] = {}  # 日付ごとのレポート
+
         # DB接続情報
         self.db_config = {
             'host': os.getenv('DB_HOST', 'localhost'),
@@ -290,12 +293,13 @@ class BacktestEngine:
             conn = psycopg2.connect(**self.db_config)
             cursor = conn.cursor()
 
-            # backtest_で始まる全テーブルを取得
+            # backtest_で始まる全テーブルを取得（VIEWは除外）
             cursor.execute("""
-                SELECT table_name
+                SELECT table_name, table_type
                 FROM information_schema.tables
                 WHERE table_schema = 'public'
                 AND table_name LIKE 'backtest_%'
+                AND table_type = 'BASE TABLE'
                 ORDER BY table_name
             """)
 
@@ -345,15 +349,16 @@ class BacktestEngine:
                     if symbol and has_symbol:
                         delete_query = f"DELETE FROM {table} WHERE symbol = %s"
                         cursor.execute(delete_query, (symbol,))
+                        deleted_counts[table] = cursor.rowcount
                     else:
                         # symbolカラムがない、またはsymbol指定なしの場合は全削除
                         delete_query = f"TRUNCATE TABLE {table} CASCADE"
                         cursor.execute(delete_query)
-
-                    deleted_counts[table] = cursor.rowcount
+                        deleted_counts[table] = 'TRUNCATED'  # TRUNCATEは成功マーク
                 except Exception as e:
                     self.logger.warning(f"Table {table} deletion failed: {e}")
-                    deleted_counts[table] = 0
+                    deleted_counts[table] = 'ERROR'
+                    # エラーが発生しても次のテーブルへ続行
 
             conn.commit()
             cursor.close()
@@ -364,23 +369,35 @@ class BacktestEngine:
             print("✓ 削除完了")
             print("-" * 60)
             total_deleted = 0
-            for table, count in deleted_counts.items():
-                # TRUNCATEの場合rowcountは0になるため、その場合は「全削除」と表示
-                if count == 0 and deleted_counts[table] == 0:
-                    print(f"  {table:<35} 全削除")
-                elif count > 0:
-                    print(f"  {table:<35} {count:>5}件")
-                    total_deleted += count
+            total_truncated = 0
+            total_errors = 0
 
-            if total_deleted == 0:
+            for table, result in deleted_counts.items():
+                if result == 'TRUNCATED':
+                    print(f"  {table:<35} 全削除")
+                    total_truncated += 1
+                elif result == 'ERROR':
+                    print(f"  {table:<35} ❌ エラー")
+                    total_errors += 1
+                elif isinstance(result, int) and result > 0:
+                    print(f"  {table:<35} {result:>5}件")
+                    total_deleted += result
+                elif isinstance(result, int) and result == 0:
+                    print(f"  {table:<35} データなし")
+
+            print("-" * 60)
+            if total_truncated > 0:
+                print(f"  全削除: {total_truncated}テーブル")
+            if total_deleted > 0:
+                print(f"  部分削除: {total_deleted}件")
+            if total_errors > 0:
+                print(f"  エラー: {total_errors}テーブル")
+            if total_deleted == 0 and total_truncated == 0:
                 print("  削除対象のデータはありませんでした。")
-            else:
-                print("-" * 60)
-                print(f"  合計: {total_deleted}件")
             print("")
 
             symbol_msg = f" (symbol={symbol})" if symbol else " (all symbols)"
-            self.logger.info(f"All backtest tables reset{symbol_msg}, deleted {total_deleted} records")
+            self.logger.info(f"All backtest tables reset{symbol_msg}, truncated {total_truncated}, deleted {total_deleted} records, errors {total_errors}")
             return True
 
         except Exception as e:
@@ -588,6 +605,9 @@ class BacktestEngine:
 
         # 6. データベースに保存
         self._save_results(stats)
+
+        # レポート生成
+        self._generate_daily_report()
 
         return stats
 
@@ -807,6 +827,127 @@ class BacktestEngine:
         except Exception as e:
             self.logger.error(f"Failed to save backtest results: {e}")
 
+    def _generate_daily_report(self):
+        """
+        日次レポートをテキストファイルとして出力
+
+        1日の振り返り、各時間の分析、ルールJSONを含む
+        """
+        try:
+            # レポート出力ディレクトリ
+            report_dir = "backtest_reports"
+            os.makedirs(report_dir, exist_ok=True)
+
+            # レポートファイル名
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            report_file = os.path.join(
+                report_dir,
+                f"backtest_report_{self.symbol}_{self.start_date.strftime('%Y%m%d')}_{self.end_date.strftime('%Y%m%d')}_{timestamp}.txt"
+            )
+
+            with open(report_file, 'w', encoding='utf-8') as f:
+                f.write("=" * 100 + "\n")
+                f.write("バックテストレポート\n")
+                f.write("=" * 100 + "\n")
+                f.write(f"通貨ペア: {self.symbol}\n")
+                f.write(f"期間: {self.start_date.date()} ～ {self.end_date.date()}\n")
+                f.write(f"生成日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("=" * 100 + "\n\n")
+
+                # 日付順にソート
+                sorted_dates = sorted(self.daily_reports.keys())
+
+                for date_str in sorted_dates:
+                    report_data = self.daily_reports[date_str]
+
+                    f.write("\n" + "=" * 100 + "\n")
+                    f.write(f"📅 {date_str}\n")
+                    f.write("=" * 100 + "\n\n")
+
+                    # Phase 1: デイリーレビュー
+                    if 'review' in report_data:
+                        f.write("─" * 100 + "\n")
+                        f.write("📊 Phase 1: デイリーレビュー（前日の振り返り）\n")
+                        f.write("─" * 100 + "\n")
+                        review = report_data['review']
+                        f.write(f"総合評価: {review.get('score', 'N/A')}/100点\n\n")
+                        f.write(f"分析:\n{review.get('analysis', 'なし')}\n\n")
+                        f.write(f"本日への教訓:\n")
+                        for lesson in review.get('lessons_for_today', []):
+                            f.write(f"  • {lesson}\n")
+                        f.write("\n")
+
+                    # Phase 2: 朝の詳細分析
+                    if 'morning_analysis' in report_data:
+                        f.write("─" * 100 + "\n")
+                        f.write("🌅 Phase 2: 朝の詳細分析（本日の戦略）\n")
+                        f.write("─" * 100 + "\n")
+                        strategy = report_data['morning_analysis']
+                        f.write(f"デイリーバイアス: {strategy.get('daily_bias', 'N/A')}\n")
+                        f.write(f"確信度: {strategy.get('confidence', 0):.2f}\n\n")
+                        f.write(f"判断理由:\n{strategy.get('reasoning', 'なし')}\n\n")
+
+                        # エントリー条件
+                        entry_cond = strategy.get('entry_conditions', {})
+                        f.write(f"エントリー条件:\n")
+                        f.write(f"  方向: {entry_cond.get('direction', 'N/A')}\n")
+                        f.write(f"  トレード推奨: {entry_cond.get('should_trade', False)}\n")
+                        if 'entry_zone' in entry_cond:
+                            f.write(f"  エントリーゾーン: {entry_cond['entry_zone']}\n")
+                        f.write("\n")
+
+                        # リスク管理JSON
+                        f.write("リスク管理ルール (JSON):\n")
+                        f.write("```json\n")
+                        import json
+                        f.write(json.dumps(strategy.get('risk_management', {}), indent=2, ensure_ascii=False))
+                        f.write("\n```\n\n")
+
+                    # Phase 3: 定期更新
+                    if 'periodic_updates' in report_data:
+                        for update_time, update_data in report_data['periodic_updates'].items():
+                            f.write("─" * 100 + "\n")
+                            f.write(f"🔄 Phase 3: 定期更新（{update_time}）\n")
+                            f.write("─" * 100 + "\n")
+                            f.write(f"更新タイプ: {update_data.get('update_type', 'N/A')}\n\n")
+                            f.write(f"サマリー:\n{update_data.get('summary', 'なし')}\n\n")
+
+                            # 市場評価
+                            market_assess = update_data.get('market_assessment', {})
+                            if market_assess:
+                                f.write("市場評価:\n")
+                                f.write(f"  {market_assess}\n\n")
+
+                    # Phase 4: Layer 3a監視（ポジション保有時のみ）
+                    if 'layer3a_monitoring' in report_data:
+                        f.write("─" * 100 + "\n")
+                        f.write(f"👁️ Phase 4: Layer 3a監視ログ（15分監視）\n")
+                        f.write("─" * 100 + "\n")
+                        f.write(f"監視回数: {len(report_data['layer3a_monitoring'])}回\n")
+                        for monitor in report_data['layer3a_monitoring']:
+                            action = monitor.get('action', 'HOLD')
+                            if action != 'HOLD':
+                                f.write(f"  [{monitor.get('time', 'N/A')}] {action}: {monitor.get('reason', '')}\n")
+                        f.write("\n")
+
+                    # Phase 5: Layer 3b緊急評価
+                    if 'layer3b_emergency' in report_data:
+                        for emergency in report_data['layer3b_emergency']:
+                            f.write("─" * 100 + "\n")
+                            f.write(f"🚨 Phase 5: Layer 3b緊急評価\n")
+                            f.write("─" * 100 + "\n")
+                            f.write(f"時刻: {emergency.get('time', 'N/A')}\n")
+                            f.write(f"深刻度: {emergency.get('severity', 'N/A')}\n")
+                            f.write(f"推奨アクション: {emergency.get('action', 'N/A')}\n")
+                            f.write(f"理由:\n{emergency.get('reasoning', 'なし')}\n\n")
+
+            print(f"\n📄 レポート出力: {report_file}")
+            self.logger.info(f"Daily report generated: {report_file}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to generate daily report: {e}", exc_info=True)
+            print(f"❌ レポート生成エラー: {e}")
+
     def _get_trades_for_date(self, target_date: date) -> List[Dict]:
         """
         特定日のトレード履歴を取得
@@ -882,6 +1023,12 @@ class BacktestEngine:
                 actual_market=None,  # TODO: 実際の市場動向を計算
                 statistics=statistics
             )
+
+            # レポート用にデータ保存
+            date_str = review_date.strftime('%Y-%m-%d')
+            if date_str not in self.daily_reports:
+                self.daily_reports[date_str] = {}
+            self.daily_reports[date_str]['review'] = review_result
 
             return review_result
 
@@ -959,6 +1106,12 @@ class BacktestEngine:
                 review_result=review_result,
                 past_statistics=past_statistics
             )
+
+            # レポート用にデータ保存
+            date_str = current_date.strftime('%Y-%m-%d')
+            if date_str not in self.daily_reports:
+                self.daily_reports[date_str] = {}
+            self.daily_reports[date_str]['morning_analysis'] = strategy_result
 
             return strategy_result
 
@@ -1053,6 +1206,14 @@ class BacktestEngine:
                     f"Type: {update_result.get('update_type', 'N/A')}, "
                     f"Summary: {update_result.get('summary', 'N/A')[:50]}..."
                 )
+
+                # レポート用にデータ保存
+                date_str = current_date.strftime('%Y-%m-%d')
+                if date_str not in self.daily_reports:
+                    self.daily_reports[date_str] = {}
+                if 'periodic_updates' not in self.daily_reports[date_str]:
+                    self.daily_reports[date_str]['periodic_updates'] = {}
+                self.daily_reports[date_str]['periodic_updates'][update_time] = update_result
 
                 # 推奨変更を適用して戦略を更新
                 updated_strategy = self._apply_periodic_changes(
