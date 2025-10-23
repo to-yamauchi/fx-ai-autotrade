@@ -31,6 +31,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
+import os
 
 
 class MT5DataLoader:
@@ -49,6 +50,72 @@ class MT5DataLoader:
         """
         self.symbol = symbol
         self.logger = logging.getLogger(__name__)
+        self._mt5_initialized = False
+
+    def _ensure_mt5_initialized(self) -> bool:
+        """
+        MT5が初期化されているか確認し、必要なら初期化する
+
+        Returns:
+            bool: True=初期化済み、False=初期化失敗
+        """
+        # 既に初期化されているか確認
+        if mt5.terminal_info() is not None:
+            self._mt5_initialized = True
+            return True
+
+        # MT5が初期化されていない場合、初期化を試みる
+        self.logger.info("MT5 is not initialized. Attempting to initialize...")
+
+        # MT5初期化
+        if not mt5.initialize():
+            error_code = mt5.last_error()
+            self.logger.error(
+                f"MT5 initialization failed: {error_code}. "
+                "Make sure MT5 is running."
+            )
+            return False
+
+        # ログイン情報を環境変数から取得
+        mt5_login = os.getenv('MT5_LOGIN')
+        mt5_password = os.getenv('MT5_PASSWORD')
+        mt5_server = os.getenv('MT5_SERVER')
+
+        # ログイン情報がある場合はログイン
+        if mt5_login and mt5_password and mt5_server:
+            try:
+                login_int = int(mt5_login)
+                authorized = mt5.login(
+                    login=login_int,
+                    password=mt5_password,
+                    server=mt5_server
+                )
+
+                if not authorized:
+                    error_code = mt5.last_error()
+                    self.logger.error(
+                        f"MT5 login failed: {error_code}. "
+                        "Check your MT5 credentials."
+                    )
+                    mt5.shutdown()
+                    return False
+
+                self.logger.info(
+                    f"MT5 initialized and logged in successfully: "
+                    f"account={login_int}, server={mt5_server}"
+                )
+            except ValueError:
+                self.logger.error(f"Invalid MT5_LOGIN value: {mt5_login}")
+                mt5.shutdown()
+                return False
+        else:
+            self.logger.warning(
+                "MT5 credentials not found in environment variables. "
+                "Continuing without login."
+            )
+
+        self._mt5_initialized = True
+        return True
 
     def load_recent_ticks(self, days: int = 30) -> pd.DataFrame:
         """
@@ -62,14 +129,14 @@ class MT5DataLoader:
                 列: timestamp, bid, ask, volume
 
         Raises:
-            ValueError: MT5が初期化されていない場合
+            ValueError: MT5の初期化に失敗した場合
             ValueError: データ取得に失敗した場合
         """
-        # MT5の初期化確認
-        if not mt5.terminal_info():
+        # MT5の初期化確認（必要なら初期化）
+        if not self._ensure_mt5_initialized():
             raise ValueError(
-                "MT5 is not initialized. "
-                "Make sure MT5 is running and initialized before calling this method."
+                "Failed to initialize MT5. "
+                "Make sure MT5 is running and credentials are correct."
             )
 
         # 期間の計算
@@ -129,15 +196,15 @@ class MT5DataLoader:
                 列: timestamp, bid, ask, volume
 
         Raises:
-            ValueError: MT5が初期化されていない場合
+            ValueError: MT5の初期化に失敗した場合
             ValueError: データ取得に失敗した場合
             ValueError: 日付範囲が不正な場合
         """
-        # MT5の初期化確認
-        if not mt5.terminal_info():
+        # MT5の初期化確認（必要なら初期化）
+        if not self._ensure_mt5_initialized():
             raise ValueError(
-                "MT5 is not initialized. "
-                "Make sure MT5 is running and initialized before calling this method."
+                "Failed to initialize MT5. "
+                "Make sure MT5 is running and credentials are correct."
             )
 
         # 日付範囲の検証
@@ -197,9 +264,9 @@ class MT5DataLoader:
             None: 取得失敗時
 
         """
-        # MT5の初期化確認
-        if not mt5.terminal_info():
-            self.logger.error("MT5 is not initialized")
+        # MT5の初期化確認（必要なら初期化）
+        if not self._ensure_mt5_initialized():
+            self.logger.error("Failed to initialize MT5")
             return None
 
         # 最新ティックを取得

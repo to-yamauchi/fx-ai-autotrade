@@ -129,9 +129,9 @@ def run_demo_mode():
     result = position_manager.process_ai_judgment(ai_result)
 
     if result['success']:
-        logger.info(f"✓ トレード成功: ticket={result['ticket']}")
+        logger.info(f"[成功] トレード成功: ticket={result['ticket']}")
     else:
-        logger.warning(f"✗ トレード失敗: {result['message']}")
+        logger.warning(f"[失敗] トレード失敗: {result['message']}")
     logger.info("")
 
     # サマリー表示
@@ -178,9 +178,9 @@ def run_live_mode():
     result = position_manager.process_ai_judgment(ai_result)
 
     if result['success']:
-        logger.info(f"✓ トレード成功: ticket={result['ticket']}")
+        logger.info(f"[成功] トレード成功: ticket={result['ticket']}")
     else:
-        logger.warning(f"✗ トレード失敗: {result['message']}")
+        logger.warning(f"[失敗] トレード失敗: {result['message']}")
     logger.info("")
 
     # サマリー表示
