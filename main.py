@@ -28,7 +28,9 @@ TRADE_MODE=live python main.py
 
 import sys
 import logging
+import os
 from datetime import datetime
+from dotenv import load_dotenv
 
 from src.utils.startup_checker import StartupChecker
 from src.utils.trade_mode import get_trade_mode_config
@@ -63,10 +65,13 @@ def run_backtest_mode():
     logger.info("=" * 80)
     logger.info("")
 
-    # シンボルと期間設定
-    symbol = 'USDJPY'
-    start_date = '2024-09-01'  # 1ヶ月のバックテスト
-    end_date = '2024-09-30'
+    # 環境変数から設定を読み込み
+    symbol = os.getenv('BACKTEST_SYMBOL', 'USDJPY')
+    start_date = os.getenv('BACKTEST_START_DATE', '2024-09-01')
+    end_date = os.getenv('BACKTEST_END_DATE', '2024-09-30')
+    csv_path = os.getenv('BACKTEST_CSV_PATH', None)
+
+    # その他の設定
     initial_balance = 100000.0
     ai_model = 'flash'
     sampling_interval_hours = 24  # 1日1回AI分析
@@ -76,6 +81,7 @@ def run_backtest_mode():
     logger.info(f"Initial Balance: {initial_balance:,.0f} JPY")
     logger.info(f"AI Model: {ai_model}")
     logger.info(f"Sampling Interval: {sampling_interval_hours} hours")
+    logger.info(f"Data Source: {csv_path if csv_path else 'MT5'}")
     logger.info("")
 
     # バックテストエンジン初期化
@@ -86,7 +92,8 @@ def run_backtest_mode():
         initial_balance=initial_balance,
         ai_model=ai_model,
         sampling_interval_hours=sampling_interval_hours,
-        risk_percent=1.0
+        risk_percent=1.0,
+        csv_path=csv_path  # CSVパスを渡す（Noneの場合はMT5使用）
     )
 
     # バックテスト実行
@@ -301,6 +308,9 @@ def run_live_mode():
 
 def main():
     """メインエントリーポイント"""
+    # .envファイルを読み込み
+    load_dotenv()
+
     # ログ設定
     setup_logging()
     logger = logging.getLogger(__name__)
