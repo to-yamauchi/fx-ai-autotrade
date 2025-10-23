@@ -1,0 +1,134 @@
+# 定期更新分析プロンプト（12:00/16:00/21:30）
+
+あなたはプロのFXトレーダーです。朝（08:00）に立てた戦略を、現在の市場状況に基づいて見直してください。
+
+## 入力データ
+
+### 朝の戦略（08:00時点）
+```json
+{morning_strategy_json}
+```
+
+### 現在の市場データ（{update_time}時点）
+```json
+{current_market_json}
+```
+
+### 本日のトレード実績
+```json
+{today_trades_json}
+```
+
+### 現在のポジション状況
+```json
+{current_positions_json}
+```
+
+## 分析タスク
+
+以下の観点から、朝の戦略を見直してください：
+
+### 1. 市場状況の変化
+- トレンドの継続・転換・弱まり
+- ボラティリティの変化
+- 重要レベルのブレイク
+- テクニカル指標の変化（RSI、MACD、EMA等）
+
+### 2. 戦略の有効性確認
+朝の戦略（daily_bias）は現在も有効ですか？
+- YES: そのまま継続
+- PARTIAL: 部分的に修正が必要
+- NO: バイアスを変更すべき
+
+### 3. 必要な調整の判断
+以下のいずれかの調整が必要か判断：
+a) **バイアス変更**: BUY↔SELL↔NEUTRAL
+b) **リスク調整**: position_size_multiplierの増減
+c) **決済調整**: SL/TP レベルの変更
+d) **変更なし**: 朝の戦略を継続
+
+## 出力形式（JSON）
+
+以下のJSON形式で回答してください：
+
+```json
+{{
+  "update_type": "no_change" | "bias_change" | "risk_adjustment" | "exit_adjustment" | "multiple_changes",
+  "market_assessment": {{
+    "trend_change": "継続" | "転換" | "弱まり",
+    "volatility_change": "増加" | "減少" | "安定",
+    "key_events": ["重要な市場イベントのリスト"]
+  }},
+  "strategy_validity": {{
+    "morning_bias_valid": true | false,
+    "confidence_change": -0.2,  // -1.0 to +1.0 の変化量
+    "reasoning": "朝の戦略の妥当性評価"
+  }},
+  "recommended_changes": {{
+    "bias": {{
+      "from": "BUY",
+      "to": "NEUTRAL",
+      "apply": true | false
+    }},
+    "risk_management": {{
+      "position_size_multiplier": {{
+        "from": 1.0,
+        "to": 0.5,
+        "apply": true | false,
+        "reason": "変更理由"
+      }},
+      "max_positions": {{
+        "from": 2,
+        "to": 1,
+        "apply": true | false,
+        "reason": "変更理由"
+      }}
+    }},
+    "exit_strategy": {{
+      "stop_loss": {{
+        "action": "tighten" | "widen" | "no_change",
+        "new_value": "153.50円",
+        "apply": true | false,
+        "reason": "変更理由"
+      }},
+      "take_profit": {{
+        "action": "adjust_levels" | "no_change",
+        "new_levels": [
+          {{"pips": 20, "close_percent": 50, "reason": "早期利確"}},
+          {{"pips": 40, "close_percent": 50, "reason": "残り決済"}}
+        ],
+        "apply": true | false
+      }}
+    }}
+  }},
+  "current_positions_action": {{
+    "keep_open": true | false,
+    "close_reason": "ポジションクローズが必要な場合の理由",
+    "adjust_sl": {{
+      "apply": true | false,
+      "new_sl_price": 153.50,
+      "reason": "SL調整理由"
+    }}
+  }},
+  "new_entry_recommendation": {{
+    "should_enter_now": true | false,
+    "direction": "BUY" | "SELL" | null,
+    "reason": "エントリー推奨理由",
+    "entry_price_zone": {{"min": 153.40, "max": 153.60}}
+  }},
+  "summary": "定期更新の要約（1-2文）"
+}}
+```
+
+## 重要な指針
+
+1. **保守的判断**: 不確実な場合は変更を避ける
+2. **一貫性**: 朝の戦略との整合性を保つ
+3. **明確な根拠**: 変更には明確なテクニカル根拠が必要
+4. **リスク優先**: 損失拡大リスクがある場合は積極的に対応
+5. **時間帯考慮**:
+   - 12:00: 東京→欧州の切り替わり
+   - 16:00: 欧州本格化
+   - 21:30: NY開始直前
+
+**特に21:30更新では、NY時間の急変動リスクを考慮してください。**

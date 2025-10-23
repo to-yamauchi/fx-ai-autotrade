@@ -661,6 +661,820 @@ class AIAnalyzer:
             self.logger.error(f"Failed to save review to database: {e}")
             return False
 
+    def morning_analysis(
+        self,
+        market_data: Dict,
+        review_result: Optional[Dict] = None,
+        past_statistics: Optional[Dict] = None
+    ) -> Dict:
+        """
+        朝の詳細分析を実行（08:00、Gemini Pro）
+
+        Args:
+            market_data: 標準化された市場データ（from data_standardizer）
+            review_result: 前日の振り返り結果（from daily_review）
+            past_statistics: 過去5日の統計データ
+
+        Returns:
+            本日のトレード戦略の辞書
+            {
+                'daily_bias': 'BUY' | 'SELL' | 'NEUTRAL',
+                'confidence': 0.0-1.0,
+                'reasoning': '判断理由',
+                'market_environment': {...},
+                'entry_conditions': {...},
+                'exit_strategy': {...},
+                'risk_management': {...},
+                'key_levels': {...},
+                'scenario_planning': {...},
+                'lessons_applied': [...]
+            }
+        """
+        try:
+            self.logger.info("Starting morning detailed analysis...")
+
+            # デフォルト値の設定
+            if review_result is None:
+                review_result = {
+                    'lessons_for_today': ['前日データなし'],
+                    'pattern_recognition': {
+                        'success_patterns': [],
+                        'failure_patterns': []
+                    }
+                }
+            if past_statistics is None:
+                past_statistics = {
+                    'last_5_days': {
+                        'total_pips': 0,
+                        'win_rate': '0%',
+                        'avg_holding_time': '0分'
+                    }
+                }
+
+            # プロンプトテンプレートの読み込み
+            prompt_path = os.path.join(
+                os.path.dirname(__file__),
+                'prompts',
+                'morning_analysis.txt'
+            )
+
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                prompt_template = f.read()
+
+            # データを埋め込む
+            import json
+            prompt = prompt_template.format(
+                market_data_json=json.dumps(market_data, ensure_ascii=False, indent=2),
+                review_json=json.dumps(review_result, ensure_ascii=False, indent=2),
+                past_statistics_json=json.dumps(past_statistics, ensure_ascii=False, indent=2)
+            )
+
+            self.logger.info("Calling Gemini Pro for morning analysis...")
+
+            # Gemini Pro呼び出し（温度0.3で再現性確保）
+            response = self.gemini_client.generate_response(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=3000,
+                model='pro'  # Gemini 2.5 Pro
+            )
+
+            # JSONパース
+            import re
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = response
+
+            strategy_result = json.loads(json_str)
+
+            self.logger.info(
+                f"Morning analysis completed. Bias: {strategy_result.get('daily_bias', 'N/A')}, "
+                f"Confidence: {strategy_result.get('confidence', 0):.2f}"
+            )
+
+            # データベースに保存
+            self._save_morning_analysis_to_database(strategy_result, market_data)
+
+            return strategy_result
+
+        except Exception as e:
+            self.logger.error(f"Morning analysis failed: {e}", exc_info=True)
+            # フォールバック：保守的な戦略を返す
+            return {
+                'daily_bias': 'NEUTRAL',
+                'confidence': 0.0,
+                'reasoning': f'分析エラーにより保守的判断: {str(e)}',
+                'market_environment': {
+                    'trend': '不明',
+                    'strength': '不明',
+                    'phase': '不明'
+                },
+                'entry_conditions': {
+                    'should_trade': False,
+                    'direction': 'NEUTRAL',
+                    'price_zone': {'min': 0, 'max': 0},
+                    'required_signals': [],
+                    'avoid_if': ['分析エラーのため取引見送り']
+                },
+                'exit_strategy': {
+                    'take_profit': [],
+                    'stop_loss': {'initial': 'account_2_percent'},
+                    'indicator_exits': [],
+                    'time_exits': {}
+                },
+                'risk_management': {
+                    'position_size_multiplier': 0.0,
+                    'max_positions': 0,
+                    'reason': '分析エラーのため取引停止'
+                },
+                'key_levels': {},
+                'scenario_planning': {},
+                'lessons_applied': [],
+                'error': str(e)
+            }
+
+    def _save_morning_analysis_to_database(self, strategy_result: Dict, market_data: Dict) -> bool:
+        """
+        朝の分析結果（戦略）をデータベースに保存
+
+        Args:
+            strategy_result: 戦略結果
+            market_data: 市場データ
+
+        Returns:
+            成功時True
+        """
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+
+            # テーブル名取得（モード別）
+            table_name = self.table_names.get('strategies', 'backtest_daily_strategies')
+
+            # バックテストモードの場合は追加カラムを含める
+            if self.mode_config.is_backtest():
+                if not self.backtest_start_date or not self.backtest_end_date:
+                    self.logger.warning(
+                        "Backtest mode but backtest dates not provided. Skipping database save."
+                    )
+                    return False
+
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (strategy_date, symbol, daily_bias, confidence, reasoning,
+                     market_environment, entry_conditions, exit_strategy, risk_management,
+                     key_levels, scenario_planning, lessons_applied, market_data,
+                     backtest_start_date, backtest_end_date, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now().date(),
+                    self.symbol,
+                    strategy_result.get('daily_bias', 'NEUTRAL'),
+                    strategy_result.get('confidence', 0.0),
+                    strategy_result.get('reasoning', ''),
+                    Json(strategy_result.get('market_environment', {})),
+                    Json(strategy_result.get('entry_conditions', {})),
+                    Json(strategy_result.get('exit_strategy', {})),
+                    Json(strategy_result.get('risk_management', {})),
+                    Json(strategy_result.get('key_levels', {})),
+                    Json(strategy_result.get('scenario_planning', {})),
+                    Json(strategy_result.get('lessons_applied', [])),
+                    Json(market_data),
+                    self.backtest_start_date,
+                    self.backtest_end_date,
+                    datetime.now()
+                ))
+            else:
+                # DEMOモード/本番モード
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (strategy_date, symbol, daily_bias, confidence, reasoning,
+                     market_environment, entry_conditions, exit_strategy, risk_management,
+                     key_levels, scenario_planning, lessons_applied, market_data, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now().date(),
+                    self.symbol,
+                    strategy_result.get('daily_bias', 'NEUTRAL'),
+                    strategy_result.get('confidence', 0.0),
+                    strategy_result.get('reasoning', ''),
+                    Json(strategy_result.get('market_environment', {})),
+                    Json(strategy_result.get('entry_conditions', {})),
+                    Json(strategy_result.get('exit_strategy', {})),
+                    Json(strategy_result.get('risk_management', {})),
+                    Json(strategy_result.get('key_levels', {})),
+                    Json(strategy_result.get('scenario_planning', {})),
+                    Json(strategy_result.get('lessons_applied', [])),
+                    Json(market_data),
+                    datetime.now()
+                ))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            self.logger.info(f"Morning analysis saved to database ({table_name})")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to save morning analysis to database: {e}")
+            return False
+
+    def periodic_update(
+        self,
+        morning_strategy: Dict,
+        current_market_data: Dict,
+        today_trades: List[Dict],
+        current_positions: List[Dict],
+        update_time: str  # "12:00", "16:00", "21:30"
+    ) -> Dict:
+        """
+        定期更新を実行（12:00/16:00/21:30、Gemini Flash）
+
+        Args:
+            morning_strategy: 朝の詳細分析で生成された戦略
+            current_market_data: 現在の市場データ（標準化済み）
+            today_trades: 本日のトレード実績
+            current_positions: 現在のポジション状況
+            update_time: 更新時刻（"12:00", "16:00", "21:30"）
+
+        Returns:
+            更新結果の辞書
+            {
+                'update_type': 'no_change' | 'bias_change' | 'risk_adjustment' | ...,
+                'market_assessment': {...},
+                'strategy_validity': {...},
+                'recommended_changes': {...},
+                'current_positions_action': {...},
+                'new_entry_recommendation': {...}
+            }
+        """
+        try:
+            self.logger.info(f"Starting periodic update at {update_time}...")
+
+            # デフォルト値の設定
+            if not morning_strategy:
+                morning_strategy = {
+                    'daily_bias': 'NEUTRAL',
+                    'confidence': 0.5,
+                    'entry_conditions': {},
+                    'exit_strategy': {},
+                    'risk_management': {}
+                }
+
+            # プロンプトテンプレートの読み込み
+            prompt_path = os.path.join(
+                os.path.dirname(__file__),
+                'prompts',
+                'periodic_update.txt'
+            )
+
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                prompt_template = f.read()
+
+            # データを埋め込む
+            import json
+            prompt = prompt_template.format(
+                morning_strategy_json=json.dumps(morning_strategy, ensure_ascii=False, indent=2),
+                current_market_json=json.dumps(current_market_data, ensure_ascii=False, indent=2),
+                today_trades_json=json.dumps(today_trades, ensure_ascii=False, indent=2),
+                current_positions_json=json.dumps(current_positions, ensure_ascii=False, indent=2),
+                update_time=update_time
+            )
+
+            self.logger.info(f"Calling Gemini Flash for periodic update ({update_time})...")
+
+            # Gemini Flash呼び出し（温度0.3、コスト削減）
+            response = self.gemini_client.generate_response(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=2000,
+                model='flash'  # Gemini 2.5 Flash（$0.002/call）
+            )
+
+            # JSONパース
+            import re
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = response
+
+            update_result = json.loads(json_str)
+
+            self.logger.info(
+                f"Periodic update completed at {update_time}. "
+                f"Type: {update_result.get('update_type', 'N/A')}"
+            )
+
+            # データベースに保存
+            self._save_periodic_update_to_database(update_result, update_time, current_market_data)
+
+            return update_result
+
+        except Exception as e:
+            self.logger.error(f"Periodic update failed at {update_time}: {e}", exc_info=True)
+            # フォールバック：変更なし
+            return {
+                'update_type': 'no_change',
+                'market_assessment': {
+                    'trend_change': '不明',
+                    'volatility_change': '不明',
+                    'key_events': []
+                },
+                'strategy_validity': {
+                    'morning_bias_valid': True,
+                    'confidence_change': 0.0,
+                    'reasoning': f'分析エラーのため朝の戦略を継続: {str(e)}'
+                },
+                'recommended_changes': {
+                    'bias': {'apply': False},
+                    'risk_management': {},
+                    'exit_strategy': {}
+                },
+                'current_positions_action': {
+                    'keep_open': True,
+                    'close_reason': '',
+                    'adjust_sl': {'apply': False}
+                },
+                'new_entry_recommendation': {
+                    'should_enter_now': False,
+                    'direction': None,
+                    'reason': '分析エラー'
+                },
+                'summary': '分析エラーのため変更なし',
+                'error': str(e)
+            }
+
+    def _save_periodic_update_to_database(
+        self,
+        update_result: Dict,
+        update_time: str,
+        market_data: Dict
+    ) -> bool:
+        """
+        定期更新結果をデータベースに保存
+
+        Args:
+            update_result: 更新結果
+            update_time: 更新時刻（"12:00", "16:00", "21:30"）
+            market_data: 市場データ
+
+        Returns:
+            成功時True
+        """
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+
+            # テーブル名取得（モード別）
+            table_name = self.table_names.get('periodic_updates', 'backtest_periodic_updates')
+
+            # バックテストモードの場合は追加カラムを含める
+            if self.mode_config.is_backtest():
+                if not self.backtest_start_date or not self.backtest_end_date:
+                    self.logger.warning(
+                        "Backtest mode but backtest dates not provided. Skipping database save."
+                    )
+                    return False
+
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (update_date, update_time, symbol, update_type,
+                     market_assessment, strategy_validity, recommended_changes,
+                     positions_action, entry_recommendation, summary, market_data,
+                     backtest_start_date, backtest_end_date, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now().date(),
+                    update_time,
+                    self.symbol,
+                    update_result.get('update_type', 'no_change'),
+                    Json(update_result.get('market_assessment', {})),
+                    Json(update_result.get('strategy_validity', {})),
+                    Json(update_result.get('recommended_changes', {})),
+                    Json(update_result.get('current_positions_action', {})),
+                    Json(update_result.get('new_entry_recommendation', {})),
+                    update_result.get('summary', ''),
+                    Json(market_data),
+                    self.backtest_start_date,
+                    self.backtest_end_date,
+                    datetime.now()
+                ))
+            else:
+                # DEMOモード/本番モード
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (update_date, update_time, symbol, update_type,
+                     market_assessment, strategy_validity, recommended_changes,
+                     positions_action, entry_recommendation, summary, market_data, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now().date(),
+                    update_time,
+                    self.symbol,
+                    update_result.get('update_type', 'no_change'),
+                    Json(update_result.get('market_assessment', {})),
+                    Json(update_result.get('strategy_validity', {})),
+                    Json(update_result.get('recommended_changes', {})),
+                    Json(update_result.get('current_positions_action', {})),
+                    Json(update_result.get('new_entry_recommendation', {})),
+                    update_result.get('summary', ''),
+                    Json(market_data),
+                    datetime.now()
+                ))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            self.logger.info(f"Periodic update saved to database ({table_name})")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to save periodic update to database: {e}")
+            return False
+
+    def layer3a_monitor(
+        self,
+        position: Dict,
+        current_market_data: Dict,
+        daily_strategy: Dict
+    ) -> Dict:
+        """
+        Layer 3a 監視を実行（15分ごと、Flash-Lite）
+
+        Args:
+            position: 監視対象のポジション情報
+            current_market_data: 現在の市場データ（簡易版）
+            daily_strategy: 本日の戦略
+
+        Returns:
+            監視結果の辞書
+            {
+                'action': 'HOLD' | 'CLOSE_NOW' | 'ADJUST_SL' | 'PARTIAL_CLOSE',
+                'urgency': 'normal' | 'high',
+                'reason': '判断理由',
+                'details': {...},
+                'recommended_action': {...}
+            }
+        """
+        try:
+            self.logger.debug("Starting Layer 3a monitoring...")
+
+            # プロンプトテンプレートの読み込み
+            prompt_path = os.path.join(
+                os.path.dirname(__file__),
+                'prompts',
+                'layer3a_monitoring.txt'
+            )
+
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                prompt_template = f.read()
+
+            # データを埋め込む
+            import json
+            prompt = prompt_template.format(
+                position_json=json.dumps(position, ensure_ascii=False, indent=2),
+                current_market_json=json.dumps(current_market_data, ensure_ascii=False, indent=2),
+                daily_strategy_json=json.dumps(daily_strategy, ensure_ascii=False, indent=2)
+            )
+
+            self.logger.debug("Calling Gemini Flash-Lite for Layer 3a monitoring...")
+
+            # Gemini Flash-Lite呼び出し（超軽量、温度0.2）
+            response = self.gemini_client.generate_response(
+                prompt=prompt,
+                temperature=0.2,
+                max_tokens=500,  # 短い応答
+                model='flash-8b'  # Gemini 2.5 Flash-8B（$0.0003/call）
+            )
+
+            # JSONパース
+            import re
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = response
+
+            monitor_result = json.loads(json_str)
+
+            self.logger.debug(
+                f"Layer 3a monitoring completed. "
+                f"Action: {monitor_result.get('action', 'N/A')}"
+            )
+
+            # データベースに保存（頻度が高いので保存は任意）
+            # バックテストモードでのみ保存
+            if self.mode_config.is_backtest():
+                self._save_layer3a_monitoring_to_database(monitor_result, position, current_market_data)
+
+            return monitor_result
+
+        except Exception as e:
+            self.logger.error(f"Layer 3a monitoring failed: {e}", exc_info=True)
+            # フォールバック：HOLD
+            return {
+                'action': 'HOLD',
+                'urgency': 'normal',
+                'reason': f'監視エラーのため保留: {str(e)}',
+                'details': {
+                    'profit_status': 'unknown',
+                    'risk_level': 'unknown',
+                    'signals': []
+                },
+                'recommended_action': {
+                    'close_percent': 0,
+                    'new_sl': None,
+                    'reason': '監視エラー'
+                },
+                'error': str(e)
+            }
+
+    def _save_layer3a_monitoring_to_database(
+        self,
+        monitor_result: Dict,
+        position: Dict,
+        market_data: Dict
+    ) -> bool:
+        """
+        Layer 3a監視結果をデータベースに保存
+
+        Args:
+            monitor_result: 監視結果
+            position: ポジション情報
+            market_data: 市場データ
+
+        Returns:
+            成功時True
+        """
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+
+            # テーブル名取得（モード別）
+            table_name = self.table_names.get('layer3a_monitoring', 'backtest_layer3a_monitoring')
+
+            # バックテストモードの場合は追加カラムを含める
+            if self.mode_config.is_backtest():
+                if not self.backtest_start_date or not self.backtest_end_date:
+                    self.logger.warning(
+                        "Backtest mode but backtest dates not provided. Skipping database save."
+                    )
+                    return False
+
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (check_timestamp, symbol, action, urgency, reason,
+                     details, recommended_action, position_info, market_data,
+                     backtest_start_date, backtest_end_date, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now(),
+                    self.symbol,
+                    monitor_result.get('action', 'HOLD'),
+                    monitor_result.get('urgency', 'normal'),
+                    monitor_result.get('reason', ''),
+                    Json(monitor_result.get('details', {})),
+                    Json(monitor_result.get('recommended_action', {})),
+                    Json(position),
+                    Json(market_data),
+                    self.backtest_start_date,
+                    self.backtest_end_date,
+                    datetime.now()
+                ))
+            else:
+                # DEMOモード/本番モード
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (check_timestamp, symbol, action, urgency, reason,
+                     details, recommended_action, position_info, market_data, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now(),
+                    self.symbol,
+                    monitor_result.get('action', 'HOLD'),
+                    monitor_result.get('urgency', 'normal'),
+                    monitor_result.get('reason', ''),
+                    Json(monitor_result.get('details', {})),
+                    Json(monitor_result.get('recommended_action', {})),
+                    Json(position),
+                    Json(market_data),
+                    datetime.now()
+                ))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            self.logger.debug(f"Layer 3a monitoring saved to database ({table_name})")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to save Layer 3a monitoring to database: {e}")
+            return False
+
+    def layer3b_emergency(
+        self,
+        anomaly_info: Dict,
+        current_positions: List[Dict],
+        current_market_data: Dict,
+        daily_strategy: Dict
+    ) -> Dict:
+        """
+        Layer 3b 緊急評価を実行（異常検知時、Gemini Pro）
+
+        Args:
+            anomaly_info: 異常検知情報（Layer 2から）
+            current_positions: 現在のポジション一覧
+            current_market_data: 現在の市場データ
+            daily_strategy: 本日の戦略
+
+        Returns:
+            緊急評価結果の辞書
+            {
+                'severity': 'low' | 'medium' | 'high' | 'critical',
+                'action': 'CONTINUE' | 'CLOSE_ALL' | 'CLOSE_PARTIAL' | 'REVERSE',
+                'reasoning': '判断理由',
+                'immediate_actions': [...],
+                'risk_assessment': {...}
+            }
+        """
+        try:
+            self.logger.warning("Starting Layer 3b emergency evaluation...")
+
+            # プロンプトテンプレートの読み込み
+            prompt_path = os.path.join(
+                os.path.dirname(__file__),
+                'prompts',
+                'layer3b_emergency.txt'
+            )
+
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                prompt_template = f.read()
+
+            # データを埋め込む
+            import json
+            prompt = prompt_template.format(
+                anomaly_json=json.dumps(anomaly_info, ensure_ascii=False, indent=2),
+                positions_json=json.dumps(current_positions, ensure_ascii=False, indent=2),
+                market_json=json.dumps(current_market_data, ensure_ascii=False, indent=2),
+                strategy_json=json.dumps(daily_strategy, ensure_ascii=False, indent=2)
+            )
+
+            self.logger.warning("Calling Gemini Pro for Layer 3b emergency evaluation...")
+
+            # Gemini Pro呼び出し（高精度、温度0.2で冷静な判断）
+            response = self.gemini_client.generate_response(
+                prompt=prompt,
+                temperature=0.2,
+                max_tokens=1500,
+                model='pro'  # Gemini 2.5 Pro（緊急時は高精度）
+            )
+
+            # JSONパース
+            import re
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = response
+
+            emergency_result = json.loads(json_str)
+
+            self.logger.warning(
+                f"Layer 3b emergency evaluation completed. "
+                f"Severity: {emergency_result.get('severity', 'N/A')}, "
+                f"Action: {emergency_result.get('action', 'N/A')}"
+            )
+
+            # データベースに保存
+            self._save_layer3b_emergency_to_database(emergency_result, anomaly_info, current_market_data)
+
+            return emergency_result
+
+        except Exception as e:
+            self.logger.error(f"Layer 3b emergency evaluation failed: {e}", exc_info=True)
+            # フォールバック：保守的判断（全決済）
+            return {
+                'severity': 'critical',
+                'action': 'CLOSE_ALL',
+                'reasoning': f'緊急評価エラーのため全ポジションクローズを推奨: {str(e)}',
+                'immediate_actions': [
+                    '全ポジションを即座にクローズ',
+                    '新規エントリーを停止',
+                    'システムログを確認'
+                ],
+                'risk_assessment': {
+                    'current_risk': 'unknown',
+                    'potential_loss': 'unknown',
+                    'recommendation': '安全のため全決済'
+                },
+                'error': str(e)
+            }
+
+    def _save_layer3b_emergency_to_database(
+        self,
+        emergency_result: Dict,
+        anomaly_info: Dict,
+        market_data: Dict
+    ) -> bool:
+        """
+        Layer 3b緊急評価結果をデータベースに保存
+
+        Args:
+            emergency_result: 緊急評価結果
+            anomaly_info: 異常検知情報
+            market_data: 市場データ
+
+        Returns:
+            成功時True
+        """
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+
+            # テーブル名取得（モード別）
+            table_name = self.table_names.get('layer3b_emergency', 'backtest_layer3b_emergency')
+
+            # バックテストモードの場合は追加カラムを含める
+            if self.mode_config.is_backtest():
+                if not self.backtest_start_date or not self.backtest_end_date:
+                    self.logger.warning(
+                        "Backtest mode but backtest dates not provided. Skipping database save."
+                    )
+                    return False
+
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (event_timestamp, symbol, severity, action, reasoning,
+                     immediate_actions, risk_assessment, anomaly_info, market_data,
+                     backtest_start_date, backtest_end_date, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now(),
+                    self.symbol,
+                    emergency_result.get('severity', 'medium'),
+                    emergency_result.get('action', 'CONTINUE'),
+                    emergency_result.get('reasoning', ''),
+                    Json(emergency_result.get('immediate_actions', [])),
+                    Json(emergency_result.get('risk_assessment', {})),
+                    Json(anomaly_info),
+                    Json(market_data),
+                    self.backtest_start_date,
+                    self.backtest_end_date,
+                    datetime.now()
+                ))
+            else:
+                # DEMOモード/本番モード
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (event_timestamp, symbol, severity, action, reasoning,
+                     immediate_actions, risk_assessment, anomaly_info, market_data, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now(),
+                    self.symbol,
+                    emergency_result.get('severity', 'medium'),
+                    emergency_result.get('action', 'CONTINUE'),
+                    emergency_result.get('reasoning', ''),
+                    Json(emergency_result.get('immediate_actions', [])),
+                    Json(emergency_result.get('risk_assessment', {})),
+                    Json(anomaly_info),
+                    Json(market_data),
+                    datetime.now()
+                ))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            self.logger.warning(f"Layer 3b emergency evaluation saved to database ({table_name})")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to save Layer 3b emergency evaluation to database: {e}")
+            return False
+
 
 # モジュールのエクスポート
 __all__ = ['AIAnalyzer']
