@@ -81,18 +81,12 @@ class CSVTickLoader:
             FileNotFoundError: If CSV file not found
             ValueError: If CSV format is invalid or data is insufficient
         """
-        self.logger.info(f"Loading tick data from CSV: {self.csv_path}")
-
         # Calculate extended start date for AI historical data
         extended_start_date = start_date
         if start_date and history_days > 0:
             start_dt = pd.to_datetime(start_date)
             extended_start_dt = start_dt - pd.Timedelta(days=history_days)
             extended_start_date = extended_start_dt.strftime('%Y-%m-%d')
-            self.logger.info(
-                f"Loading data from {extended_start_date} (extended by {history_days} days) "
-                f"to {end_date} for AI analysis"
-            )
 
         # Check if path is file or directory
         if os.path.isfile(self.csv_path):
@@ -113,10 +107,6 @@ class CSVTickLoader:
 
         # Validate data coverage
         self._validate_data_coverage(df, extended_start_date, end_date)
-
-        self.logger.info(
-            f"Loaded {len(df):,} ticks from CSV (covers {df['timestamp'].min()} to {df['timestamp'].max()})"
-        )
 
         return df
 
@@ -183,7 +173,7 @@ class CSVTickLoader:
             self.logger.error(error_msg)
             raise ValueError(error_msg)
 
-        self.logger.info("Data coverage validation: PASSED")
+        self.logger.debug("Data coverage validation: PASSED")
 
     def _normalize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """

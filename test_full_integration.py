@@ -24,10 +24,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # 環境変数の読み込み
 load_dotenv()
 
-# ログ設定
+# ログ設定（エラーと警告のみ表示）
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.WARNING,
+    format='%(levelname)s: %(message)s'
 )
 
 from src.backtest.backtest_engine import BacktestEngine

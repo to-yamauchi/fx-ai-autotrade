@@ -79,17 +79,14 @@ class GeminiClient:
         # モデルの初期化
         # Pro: 最高精度、コスト高、速度遅
         self.model_pro = genai.GenerativeModel(model_pro_name)
-        self.logger.info(f"Initialized Pro model: {model_pro_name}")
 
         # Flash: Gemini 2.0 Flash（推奨モデル）
         self.model_flash = genai.GenerativeModel(model_flash_name)
-        self.logger.info(f"Initialized Flash model: {model_flash_name}")
 
         # Flash-8B: 高速軽量、コスト低、精度やや劣る
         self.model_flash_lite = genai.GenerativeModel(model_flash_8b_name)
-        self.logger.info(f"Initialized Flash-8B model: {model_flash_8b_name}")
 
-        self.logger.info("GeminiClient initialized successfully")
+        self.logger.info(f"✓ Gemini API initialized (Pro:{model_pro_name}, Flash:{model_flash_name}, Flash-8B:{model_flash_8b_name})")
 
     def analyze_market(self,
                       market_data: Dict,
@@ -122,24 +119,17 @@ class GeminiClient:
         selected_model = self._select_model(model)
 
         try:
-            # AI分析の実行
-            self.logger.info(f"Analyzing market with {model} model...")
+            # AI分析の実行（ログは最小限に）
             response = selected_model.generate_content(prompt)
 
             # レスポンスのパース
             result = self._parse_response(response.text)
 
-            # ログ出力
-            self.logger.info(
-                f"AI Analysis: {result['action']} "
-                f"(confidence: {result.get('confidence', 0)}%)"
-            )
-
             return result
 
         except Exception as e:
             # エラー時はHOLDを返す
-            self.logger.error(f"AI analysis error: {e}")
+            self.logger.error(f"❌ AI analysis error: {e}")
             return {
                 'action': 'HOLD',
                 'confidence': 0,
