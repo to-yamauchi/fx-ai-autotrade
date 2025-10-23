@@ -23,10 +23,10 @@
 │         └→ 戦略の妥当性確認・更新                             │
 │                                                               │
 │  00:00  Phase 4: Layer 3a監視 (Gemini Flash-8B)              │
-│  ~24:00 └→ 15分ごとにポジション監視                           │
+│  ~24:00 └→ 15分ごとにポジション監視（ポジション保有時のみ）    │
 │                                                               │
 │  随時    Phase 5: Layer 3b緊急評価 (Gemini Pro)               │
-│         └→ 異常検知時に緊急対応                               │
+│         └→ 異常検知時に緊急対応（ポジション保有時のみ）        │
 │                                                               │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -262,9 +262,11 @@ INSERT INTO backtest_daily_strategies (
 
 ### Phase 5: Layer 3b緊急評価（異常検知時）
 
-**実行タイミング**: 異常検知時のみ
+**実行タイミング**: 異常検知時のみ（ポジション保有時のみ）
 **使用モデル**: Gemini 2.5 Pro（高精度判断）
 **処理時間**: 約5-10秒
+
+**⚠️ 重要**: ポジションがない場合は、異常が検知されても評価をスキップします（リスクがないためAI評価不要）
 
 ```
 1. 異常検知
@@ -273,7 +275,11 @@ INSERT INTO backtest_daily_strategies (
    ├→ ボラティリティ急増（ATRの2倍以上）
    └→ 含み損急拡大（-3%以上）
 
-2. 異常検知時の評価実行
+2. ポジション保有確認
+   ├→ open_positions が空の場合はスキップ
+   └→ ポジションがあれば緊急評価を実行
+
+3. 異常検知時の評価実行
    └→ AIAnalyzer.layer3b_emergency() 呼び出し
       ├→ プロンプト: prompts/layer3b_emergency.txt
       ├→ 入力データ:
@@ -284,20 +290,20 @@ INSERT INTO backtest_daily_strategies (
       │
       └→ Gemini Pro API呼び出し (温度: 0.2)
 
-3. 緊急評価結果の生成
+4. 緊急評価結果の生成
    ├→ severity: low / medium / high / critical
    ├→ action: CONTINUE / CLOSE_ALL / CLOSE_PARTIAL / REVERSE
    ├→ reasoning: 判断理由
    ├→ immediate_actions: [即座に取るべき行動配列]
    └→ risk_assessment: リスク評価
 
-4. 緊急アクション実行
+5. 緊急アクション実行
    ├→ CLOSE_ALL: 全ポジションクローズ
    ├→ CLOSE_PARTIAL: リスク高ポジションのみクローズ
    ├→ REVERSE: ポジション反転
    └→ CONTINUE: 継続（軽微な異常）
 
-5. データベースに保存
+6. データベースに保存
    └→ backtest_layer3b_emergency / demo_layer3b_emergency / layer3b_emergency
 ```
 
