@@ -272,6 +272,122 @@ class BacktestEngine:
             print(f"❌ エラー: {e}")
             return False
 
+    def reset_all_backtest_tables(self, confirm: bool = True, symbol: Optional[str] = None) -> bool:
+        """
+        backtest_で始まる全テーブルのデータをリセット（全削除）
+
+        全てのバックテスト実行結果を削除します。
+        オプションで特定の通貨ペアのみ削除可能（symbolカラムがあるテーブルのみ）。
+
+        Args:
+            confirm: 確認プロンプトを表示するか（デフォルト: True）
+            symbol: 特定の通貨ペアのみ削除（Noneの場合は全通貨ペア）
+
+        Returns:
+            成功時True、キャンセルまたは失敗時False
+        """
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+
+            # backtest_で始まる全テーブルを取得
+            cursor.execute("""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                AND table_name LIKE 'backtest_%'
+                ORDER BY table_name
+            """)
+
+            tables = [row[0] for row in cursor.fetchall()]
+
+            if not tables:
+                print("backtest_テーブルが見つかりませんでした。")
+                return False
+
+            # 確認プロンプト
+            if confirm:
+                print("")
+                print("⚠️  ⚠️  ⚠️  全バックテストデータの削除  ⚠️  ⚠️  ⚠️")
+                print("=" * 60)
+                if symbol:
+                    print(f"通貨ペア: {symbol} のみ")
+                else:
+                    print("対象: 全通貨ペア、全期間")
+                print("")
+                print("以下のテーブルから全データを削除します：")
+                for table in tables:
+                    print(f"  - {table}")
+                print("")
+                print("⚠️  この操作は取り消せません！")
+                print("")
+                response = input("本当に削除しますか？ (yes/no): ").strip().lower()
+                if response not in ['yes', 'y']:
+                    print("キャンセルされました。")
+                    return False
+
+            deleted_counts = {}
+            print("")
+            print("🗑️  データ削除中...")
+
+            for table in tables:
+                try:
+                    # テーブルにsymbolカラムがあるか確認
+                    cursor.execute(f"""
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_name = '{table}'
+                        AND column_name = 'symbol'
+                    """)
+                    has_symbol = cursor.fetchone() is not None
+
+                    # 削除クエリを構築
+                    if symbol and has_symbol:
+                        delete_query = f"DELETE FROM {table} WHERE symbol = %s"
+                        cursor.execute(delete_query, (symbol,))
+                    else:
+                        # symbolカラムがない、またはsymbol指定なしの場合は全削除
+                        delete_query = f"TRUNCATE TABLE {table} CASCADE"
+                        cursor.execute(delete_query)
+
+                    deleted_counts[table] = cursor.rowcount
+                except Exception as e:
+                    self.logger.warning(f"Table {table} deletion failed: {e}")
+                    deleted_counts[table] = 0
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            # 結果表示
+            print("")
+            print("✓ 削除完了")
+            print("-" * 60)
+            total_deleted = 0
+            for table, count in deleted_counts.items():
+                # TRUNCATEの場合rowcountは0になるため、その場合は「全削除」と表示
+                if count == 0 and deleted_counts[table] == 0:
+                    print(f"  {table:<35} 全削除")
+                elif count > 0:
+                    print(f"  {table:<35} {count:>5}件")
+                    total_deleted += count
+
+            if total_deleted == 0:
+                print("  削除対象のデータはありませんでした。")
+            else:
+                print("-" * 60)
+                print(f"  合計: {total_deleted}件")
+            print("")
+
+            symbol_msg = f" (symbol={symbol})" if symbol else " (all symbols)"
+            self.logger.info(f"All backtest tables reset{symbol_msg}, deleted {total_deleted} records")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to reset all backtest tables: {e}")
+            print(f"❌ エラー: {e}")
+            return False
+
     def run(self) -> Dict:
         """
         バックテストを実行
