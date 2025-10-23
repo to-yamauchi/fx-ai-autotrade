@@ -203,8 +203,10 @@ class GeminiClient(BaseLLMClient):
             # 生成設定
             generation_config = {
                 'temperature': temperature,
-                'max_output_tokens': max_tokens,
             }
+            # max_tokensが指定されている場合のみ追加（Noneの場合はモデルのデフォルトを使用）
+            if max_tokens is not None:
+                generation_config['max_output_tokens'] = max_tokens
 
             # AI応答の生成
             response = selected_model.generate_content(
