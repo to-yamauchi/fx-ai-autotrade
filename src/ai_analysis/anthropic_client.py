@@ -73,7 +73,7 @@ class AnthropicClient(BaseLLMClient):
             prompt: プロンプトテキスト
             model: モデル名（例: claude-sonnet-4-5, claude-haiku-4）
             temperature: 温度パラメータ（0.0-1.0、デフォルト: 1.0）
-            max_tokens: 最大トークン数（デフォルト: 1024）
+            max_tokens: 最大トークン数（Noneの場合: 4096）
             **kwargs: その他のパラメータ（top_p, top_k, etc.）
 
         Returns:
@@ -89,7 +89,9 @@ class AnthropicClient(BaseLLMClient):
                 "messages": [
                     {"role": "user", "content": prompt}
                 ],
-                "max_tokens": max_tokens or 1024,  # Anthropic APIはmax_tokensが必須
+                # Anthropic APIはmax_tokensが必須
+                # Noneの場合は4096（Claude-4の推奨最大値）を使用
+                "max_tokens": max_tokens if max_tokens is not None else 4096,
             }
 
             if temperature is not None:

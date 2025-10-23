@@ -80,9 +80,9 @@ class Config:
     ai_temperature_daily_analysis: float
     ai_temperature_periodic_update: float
     ai_temperature_position_monitor: float
-    ai_max_tokens_daily_analysis: int
-    ai_max_tokens_periodic_update: int
-    ai_max_tokens_position_monitor: int
+    ai_max_tokens_daily_analysis: Optional[int]  # None=LLMデフォルト使用
+    ai_max_tokens_periodic_update: Optional[int]
+    ai_max_tokens_position_monitor: Optional[int]
 
     # ========================================
     # リスク管理
@@ -168,6 +168,23 @@ def _get_env_bool(key: str, default: bool) -> bool:
     return value_str in ('true', '1', 'yes', 'on')
 
 
+def _get_env_optional_int(key: str) -> Optional[int]:
+    """環境変数をOptional[int]として取得（未設定の場合はNone）"""
+    value_str = os.getenv(key)
+    if value_str is None or value_str.strip() == '':
+        return None
+    # コメントを除去
+    if '#' in value_str:
+        value_str = value_str.split('#')[0]
+    value_str = value_str.strip()
+    if value_str == '':
+        return None
+    try:
+        return int(value_str)
+    except ValueError:
+        return None
+
+
 def load_config() -> Config:
     """
     環境変数から設定を読み込む
@@ -205,9 +222,9 @@ def load_config() -> Config:
         ai_temperature_daily_analysis=_get_env_float('AI_TEMPERATURE_DAILY_ANALYSIS', 0.3),
         ai_temperature_periodic_update=_get_env_float('AI_TEMPERATURE_PERIODIC_UPDATE', 0.3),
         ai_temperature_position_monitor=_get_env_float('AI_TEMPERATURE_POSITION_MONITOR', 0.2),
-        ai_max_tokens_daily_analysis=_get_env_int('AI_MAX_TOKENS_DAILY_ANALYSIS', 3000),
-        ai_max_tokens_periodic_update=_get_env_int('AI_MAX_TOKENS_PERIODIC_UPDATE', 2000),
-        ai_max_tokens_position_monitor=_get_env_int('AI_MAX_TOKENS_POSITION_MONITOR', 500),
+        ai_max_tokens_daily_analysis=_get_env_optional_int('AI_MAX_TOKENS_DAILY_ANALYSIS'),
+        ai_max_tokens_periodic_update=_get_env_optional_int('AI_MAX_TOKENS_PERIODIC_UPDATE'),
+        ai_max_tokens_position_monitor=_get_env_optional_int('AI_MAX_TOKENS_POSITION_MONITOR'),
 
         # リスク管理
         position_size_default=_get_env_float('POSITION_SIZE_DEFAULT', 0.1),
