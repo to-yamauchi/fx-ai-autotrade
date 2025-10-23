@@ -116,7 +116,28 @@ class BacktestEngine:
             'client_encoding': 'UTF8'
         }
 
-        self.logger.info(
+        # Gemini API接続チェック
+        print("🔌 Gemini API接続チェック中...", end='', flush=True)
+        try:
+            from src.ai_analysis import GeminiClient
+            self.gemini_client = GeminiClient()
+            if not self.gemini_client.test_connection(verbose=False):
+                print(" ❌ 失敗")
+                print("")
+                print("Gemini APIへの接続に失敗しました。")
+                print("以下を確認してください：")
+                print("  1. .envファイルにGEMINI_API_KEYが設定されているか")
+                print("  2. Geminiモデル名が正しいか")
+                print("  3. インターネット接続が正常か")
+                print("")
+                raise ConnectionError("Gemini API connection failed")
+            print(" ✓")
+        except Exception as e:
+            if "ConnectionError" not in str(type(e).__name__):
+                print(f" ❌ エラー: {e}")
+            raise
+
+        self.logger.debug(
             f"BacktestEngine initialized: "
             f"{start_date} to {end_date}, "
             f"model={ai_model}, "
@@ -130,21 +151,19 @@ class BacktestEngine:
         Returns:
             バックテスト結果の統計情報
         """
-        self.logger.info("=" * 80)
-        self.logger.info("Starting Backtest")
-        self.logger.info("=" * 80)
-        self.logger.info(f"Period: {self.start_date.date()} to {self.end_date.date()}")
-        self.logger.info(f"Initial Balance: {self.initial_balance:,.0f} JPY")
-        self.logger.info(f"AI Model: {self.ai_model}")
-        self.logger.info(f"Sampling Interval: {self.sampling_interval}")
-        self.logger.info("")
+        print("=" * 80)
+        print("バックテスト開始")
+        print("=" * 80)
+        print(f"期間: {self.start_date.date()} ～ {self.end_date.date()}")
+        print(f"初期残高: {self.initial_balance:,.0f}円")
+        print(f"AIモデル: {self.ai_model}")
+        print("")
 
         # 1. 全期間のデータを取得
-        self.logger.info("Loading historical data...")
+        print("📊 データ読み込み中...")
 
         if self.use_csv:
             # CSVファイルから読み込み（AI分析用に30日のバッファを含む）
-            self.logger.info(f"Using CSV file: {self.csv_path}")
             tick_df = self.data_loader.load_ticks(
                 start_date=self.start_date.strftime('%Y-%m-%d'),
                 end_date=self.end_date.strftime('%Y-%m-%d'),
@@ -152,12 +171,11 @@ class BacktestEngine:
             )
         else:
             # MT5から読み込み
-            self.logger.info("Using MT5 data")
             days = (self.end_date - self.start_date).days
             tick_df = self.data_loader.load_recent_ticks(days=days + 30)
 
         if tick_df is None or tick_df.empty:
-            self.logger.error("Failed to load historical data")
+            self.logger.error("❌ データ読み込み失敗")
             return {}
 
         # DataFrameをリストに変換
@@ -169,11 +187,12 @@ class BacktestEngine:
                 'ask': row['ask']
             })
 
-        self.logger.info(f"Loaded {len(tick_data)} ticks")
-        self.logger.info("")
+        print(f"✓ {len(tick_data):,}ティック読み込み完了")
+        print("")
 
         # 2. 日ごとのループでバックテスト実行
-        self.logger.info("Running daily backtest with reviews...")
+        print("🔄 バックテスト実行中...")
+        print("")
 
         current_date = self.start_date.date()
         end_date = self.end_date.date()
@@ -182,14 +201,14 @@ class BacktestEngine:
         strategy_result = None  # 本日の戦略
 
         while current_date <= end_date:
-            self.logger.info("")
-            self.logger.info("-" * 80)
-            self.logger.info(f"Date: {current_date}")
-            self.logger.info("-" * 80)
+            print("")
+            print("-" * 80)
+            print(f"📅 {current_date}")
+            print("-" * 80)
 
             # === 06:00 前日振り返り（初日以外） ===
             if day_count > 0:
-                self.logger.info("06:00 - Running daily review...")
+                print("🔍 Phase 1: デイリーレビュー (06:00)...")
                 previous_day_trades = self._get_trades_for_date(current_date - timedelta(days=1))
 
                 if previous_day_trades:
@@ -197,65 +216,56 @@ class BacktestEngine:
                         previous_day_trades,
                         current_date - timedelta(days=1)
                     )
-
                     if review_result:
-                        self.logger.info(
-                            f"Review completed. Score: {review_result.get('score', {}).get('total', 'N/A')}"
-                        )
-                else:
-                    self.logger.info("No trades on previous day, skipping review")
+                        print(f"   ✓ スコア: {review_result.get('score', {}).get('total', 'N/A')}")
 
             # === 08:00 朝の詳細分析（Gemini Pro） ===
-            self.logger.info("08:00 - Running morning detailed analysis...")
+            print("🌅 Phase 2: 朝の詳細分析 (08:00)...")
             strategy_result = self._run_morning_analysis(
                 current_date=current_date,
                 review_result=review_result
             )
 
             if strategy_result:
-                self.logger.info(
-                    f"Morning analysis completed. "
-                    f"Bias: {strategy_result.get('daily_bias', 'N/A')}, "
-                    f"Confidence: {strategy_result.get('confidence', 0):.2f}, "
-                    f"Should trade: {strategy_result.get('entry_conditions', {}).get('should_trade', False)}"
-                )
+                bias = strategy_result.get('daily_bias', 'N/A')
+                conf = strategy_result.get('confidence', 0)
+                should_trade = strategy_result.get('entry_conditions', {}).get('should_trade', False)
+                print(f"   ✓ バイアス: {bias}, 信頼度: {conf:.0f}%, トレード: {'○' if should_trade else '×'}")
 
             # 朝の戦略に基づいてトレード判断
             current_time = datetime.combine(current_date, datetime.min.time())
             if strategy_result and strategy_result.get('entry_conditions', {}).get('should_trade', False):
                 self._execute_trade_from_strategy(strategy_result, current_time)
-            else:
-                self.logger.info("No trade signal from morning analysis")
 
-            # === 12:00 定期更新（Gemini Flash） ===
-            self.logger.info("12:00 - Running periodic update...")
+            # === 12:00/16:00/21:30 定期更新（Gemini Flash） ===
+            print("⏰ Phase 3: 定期更新 (12:00, 16:00, 21:30)...")
             strategy_result = self._run_periodic_update(
                 current_date=current_date,
                 update_time="12:00",
                 morning_strategy=strategy_result
             )
 
-            # === 16:00 定期更新（Gemini Flash） ===
-            self.logger.info("16:00 - Running periodic update...")
             strategy_result = self._run_periodic_update(
                 current_date=current_date,
                 update_time="16:00",
                 morning_strategy=strategy_result
             )
 
-            # === 21:30 定期更新（Gemini Flash） ===
-            self.logger.info("21:30 - Running periodic update...")
             strategy_result = self._run_periodic_update(
                 current_date=current_date,
                 update_time="21:30",
                 morning_strategy=strategy_result
             )
+            print("   ✓ 完了")
 
             # === 市場価格を更新 + Layer 3監視 ===
             # 当日の全ティックをチェック、15分ごとにLayer 3a監視実行
+            print("📈 Phase 4&5: リアルタイム監視中...", end='', flush=True)
             next_date = current_date + timedelta(days=1)
             last_monitor_time = None
             monitor_interval = timedelta(minutes=15)
+            layer3a_count = 0
+            layer3b_count = 0
 
             for tick in tick_data:
                 tick_time = tick['time']
@@ -276,6 +286,7 @@ class BacktestEngine:
                                 daily_strategy=strategy_result
                             )
                             last_monitor_time = tick_time
+                            layer3a_count += 1
 
                     # === Phase 5: Layer 3b緊急評価（異常検知時） ===
                     anomaly = self._detect_anomaly(
@@ -289,22 +300,24 @@ class BacktestEngine:
                             current_price={'bid': tick['bid'], 'ask': tick['ask']},
                             daily_strategy=strategy_result
                         )
+                        layer3b_count += 1
 
-            # 進捗表示
-            if day_count % 5 == 0:
-                self.logger.info(
-                    f"Progress: {current_date}, "
-                    f"Balance: {self.simulator.balance:,.0f}, "
-                    f"Open Positions: {len(self.simulator.open_positions)}"
-                )
+            print(f" ✓ 監視: {layer3a_count}回, 緊急: {layer3b_count}回")
+
+            # 残高表示
+            print(f"💰 残高: {self.simulator.balance:,.0f}円, ポジション: {len(self.simulator.open_positions)}個")
 
             # 次の日へ
             current_date += timedelta(days=1)
             day_count += 1
 
         # 3. すべてのポジションをクローズ
-        self.logger.info("")
-        self.logger.info("Closing all remaining positions...")
+        print("")
+        print("=" * 80)
+        print("バックテスト完了")
+        print("=" * 80)
+        print("")
+
         self.simulator.close_all_positions(reason='Backtest end')
 
         # 4. 統計を取得
@@ -315,12 +328,6 @@ class BacktestEngine:
 
         # 6. データベースに保存
         self._save_results(stats)
-
-        self.logger.info("")
-        self.logger.info("=" * 80)
-        self.logger.info("Backtest Completed")
-        self.logger.info("=" * 80)
-        self.logger.info("")
 
         return stats
 
