@@ -117,13 +117,45 @@ class CSVTickLoader:
         - Ask, ASK → ask
         - Volume, VOLUME, volume_real → volume
 
+        Special handling for MT5 CSV format:
+        - <DATE> + <TIME> → timestamp
+        - <BID> → bid
+        - <ASK> → ask
+        - <VOLUME> → volume
+
         Args:
             df: Input dataframe
 
         Returns:
             pd.DataFrame: Dataframe with normalized column names
         """
-        # Create column mapping (case-insensitive)
+        # Handle MT5 CSV format with <DATE> and <TIME>
+        if '<DATE>' in df.columns and '<TIME>' in df.columns:
+            self.logger.info("Detected MT5 CSV format with <DATE> and <TIME>")
+
+            # Combine <DATE> and <TIME> into timestamp
+            df['timestamp'] = pd.to_datetime(
+                df['<DATE>'].astype(str) + ' ' + df['<TIME>'].astype(str),
+                format='%Y.%m.%d %H:%M:%S.%f',
+                errors='coerce'
+            )
+
+            # Rename MT5 columns
+            column_map = {}
+            if '<BID>' in df.columns:
+                column_map['<BID>'] = 'bid'
+            if '<ASK>' in df.columns:
+                column_map['<ASK>'] = 'ask'
+            if '<VOLUME>' in df.columns:
+                column_map['<VOLUME>'] = 'volume'
+
+            if column_map:
+                df = df.rename(columns=column_map)
+                self.logger.info(f"Normalized MT5 columns: {column_map}")
+
+            return df
+
+        # Standard column normalization (case-insensitive)
         column_map = {}
 
         for col in df.columns:
@@ -166,8 +198,14 @@ class CSVTickLoader:
             if filepath.lower().endswith('.zip'):
                 df = self._load_zip_file(filepath)
             else:
-                # Read CSV directly
-                df = pd.read_csv(filepath)
+                # Read CSV directly (try tab-separated first, then comma-separated)
+                try:
+                    df = pd.read_csv(filepath, sep='\t')
+                    # Check if only one column - might be comma-separated
+                    if len(df.columns) == 1:
+                        df = pd.read_csv(filepath, sep=',')
+                except Exception:
+                    df = pd.read_csv(filepath, sep=',')
 
             # Normalize column names (auto-rename common variations)
             df = self._normalize_columns(df)
@@ -232,9 +270,17 @@ class CSVTickLoader:
             csv_file = csv_files[0]
             self.logger.info(f"Reading CSV from ZIP: {csv_file}")
 
-            # Read CSV from ZIP
+            # Read CSV from ZIP (try tab-separated first, then comma-separated)
             with zip_ref.open(csv_file) as f:
-                df = pd.read_csv(f)
+                try:
+                    df = pd.read_csv(f, sep='\t')
+                    # Check if only one column - might be comma-separated
+                    if len(df.columns) == 1:
+                        f.seek(0)  # Reset file pointer
+                        df = pd.read_csv(f, sep=',')
+                except Exception:
+                    f.seek(0)  # Reset file pointer
+                    df = pd.read_csv(f, sep=',')
 
             return df
 
