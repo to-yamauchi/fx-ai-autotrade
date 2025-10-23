@@ -201,6 +201,31 @@ class GeminiClient:
                 generation_config=generation_config
             )
 
+            # finish_reasonをチェック
+            if not response.parts:
+                # responseにpartsがない場合はfinish_reasonを確認
+                finish_reason = response.candidates[0].finish_reason if response.candidates else None
+
+                if finish_reason == 2:  # MAX_TOKENS
+                    error_msg = (
+                        "AI応答が最大トークン数に達しました。"
+                        f"現在の設定: {max_tokens} tokens。"
+                        ".envのmax_tokens設定を増やすか、プロンプトを短くしてください。"
+                    )
+                    self.logger.error(f"❌ {error_msg}")
+                    raise ValueError(error_msg)
+                elif finish_reason == 3:  # SAFETY
+                    error_msg = (
+                        "AI応答が安全性フィルタによりブロックされました。"
+                        "プロンプトの内容を確認してください。"
+                    )
+                    self.logger.error(f"❌ {error_msg}")
+                    raise ValueError(error_msg)
+                else:
+                    error_msg = f"AI応答が生成されませんでした。finish_reason: {finish_reason}"
+                    self.logger.error(f"❌ {error_msg}")
+                    raise ValueError(error_msg)
+
             return response.text
 
         except Exception as e:
