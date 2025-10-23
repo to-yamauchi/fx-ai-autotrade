@@ -39,6 +39,7 @@ import os
 
 from src.rule_engine.trading_rules import TradingRules
 from src.trade_execution.mt5_executor import MT5Executor
+from src.utils.trade_mode import get_trade_mode_config
 
 
 class PositionManager:
@@ -62,8 +63,14 @@ class PositionManager:
         """
         self.symbol = symbol
         self.risk_percent = risk_percent
-        self.use_mt5 = use_mt5
         self.logger = logging.getLogger(__name__)
+
+        # トレードモード設定の取得
+        self.mode_config = get_trade_mode_config()
+        self.table_names = self.mode_config.get_table_names()
+
+        # MT5使用判定（バックテストモードでは使用しない）
+        self.use_mt5 = use_mt5 and self.mode_config.should_use_mt5()
 
         # ルールエンジンの初期化
         self.rules = TradingRules()
@@ -91,7 +98,8 @@ class PositionManager:
 
         self.logger.info(
             f"PositionManager initialized: "
-            f"symbol={symbol}, risk={risk_percent}%, mt5={use_mt5}"
+            f"symbol={symbol}, risk={risk_percent}%, "
+            f"mode={self.mode_config.get_mode().value}, mt5={self.use_mt5}"
         )
 
     def process_ai_judgment(self, ai_judgment: Dict) -> Dict:
@@ -191,23 +199,26 @@ class PositionManager:
         return result
 
     def _get_current_positions_count(self) -> int:
-        """現在のポジション数を取得"""
+        """現在のポジション数を取得（モード別テーブル）"""
         if self.use_mt5 and self.executor:
             positions = self.executor.get_positions(symbol=self.symbol)
             # Magic Numberでフィルタ
             ai_positions = [p for p in positions if p['magic'] == MT5Executor.MAGIC_NUMBER]
             return len(ai_positions)
         else:
-            # デモモード：DBから取得
+            # バックテスト/デモモード：DBから取得
             try:
                 conn = psycopg2.connect(**self.db_config)
                 # エンコーディングを明示的に設定
                 conn.set_client_encoding('UTF8')
                 cursor = conn.cursor()
 
-                query = """
+                # モード別のテーブル名を取得
+                table_name = self.table_names['positions']
+
+                query = f"""
                     SELECT COUNT(*)
-                    FROM positions
+                    FROM {table_name}
                     WHERE symbol = %s AND status = 'OPEN'
                 """
                 cursor.execute(query, (self.symbol,))
@@ -314,7 +325,7 @@ class PositionManager:
 
     def _save_trade_record(self, ai_judgment: Dict, result: Dict) -> bool:
         """
-        トレード記録をDBに保存
+        トレード記録をDBに保存（モード別テーブル）
 
         Args:
             ai_judgment: AI判断
@@ -329,10 +340,13 @@ class PositionManager:
             conn.set_client_encoding('UTF8')
             cursor = conn.cursor()
 
+            # モード別のテーブル名を取得
+            table_name = self.table_names['positions']
+
             # positionsテーブルに保存
             if result['success'] and result['ticket'] != 'DEMO':
-                insert_query = """
-                    INSERT INTO positions
+                insert_query = f"""
+                    INSERT INTO {table_name}
                     (ticket, symbol, type, volume, open_price, sl, tp, open_time, status)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
@@ -353,6 +367,7 @@ class PositionManager:
             cursor.close()
             conn.close()
 
+            self.logger.info(f"Trade record saved to database ({table_name})")
             return True
 
         except Exception as e:
@@ -368,7 +383,7 @@ class PositionManager:
 
     def get_open_positions(self) -> List[Dict]:
         """
-        オープンポジションを取得
+        オープンポジションを取得（モード別テーブル）
 
         Returns:
             ポジションリスト
@@ -376,16 +391,19 @@ class PositionManager:
         if self.use_mt5 and self.executor:
             return self.executor.get_positions(symbol=self.symbol)
         else:
-            # デモモード：DBから取得
+            # バックテスト/デモモード：DBから取得
             try:
                 conn = psycopg2.connect(**self.db_config)
                 # エンコーディングを明示的に設定
                 conn.set_client_encoding('UTF8')
                 cursor = conn.cursor()
 
-                query = """
+                # モード別のテーブル名を取得
+                table_name = self.table_names['positions']
+
+                query = f"""
                     SELECT ticket, symbol, type, volume, open_price, sl, tp, open_time, profit
-                    FROM positions
+                    FROM {table_name}
                     WHERE symbol = %s AND status = 'OPEN'
                     ORDER BY open_time DESC
                 """
