@@ -43,10 +43,12 @@ from psycopg2.extras import Json
 import os
 
 from src.data_processing.tick_loader import TickDataLoader
+from src.data_processing.mt5_data_loader import MT5DataLoader
 from src.data_processing.timeframe_converter import TimeframeConverter
 from src.data_processing.technical_indicators import TechnicalIndicators
 from src.data_processing.data_standardizer import DataStandardizer
 from src.ai_analysis.gemini_client import GeminiClient
+from src.utils.trade_mode import get_trade_mode_config
 
 
 class AIAnalyzer:
@@ -73,8 +75,13 @@ class AIAnalyzer:
         self.model = model
         self.logger = logging.getLogger(__name__)
 
+        # トレードモード設定の取得
+        self.mode_config = get_trade_mode_config()
+        self.table_names = self.mode_config.get_table_names()
+
         # 各コンポーネントの初期化
         self.tick_loader = TickDataLoader(data_dir=data_dir)
+        self.mt5_loader = MT5DataLoader(symbol=symbol)
         self.timeframe_converter = TimeframeConverter()
         self.technical_indicators = TechnicalIndicators()
         self.data_standardizer = DataStandardizer()
@@ -90,7 +97,10 @@ class AIAnalyzer:
             'client_encoding': 'UTF8'
         }
 
-        self.logger.info(f"AIAnalyzer initialized for {symbol} with {model} model")
+        self.logger.info(
+            f"AIAnalyzer initialized for {symbol} with {model} model "
+            f"(mode: {self.mode_config.get_mode().value})"
+        )
 
     def analyze_market(self,
                       year: Optional[int] = None,
@@ -177,33 +187,52 @@ class AIAnalyzer:
                        year: Optional[int] = None,
                        month: Optional[int] = None) -> List[Dict]:
         """
-        ティックデータを読み込む
+        ティックデータを読み込む（モード別）
 
         Args:
-            year: データ年
-            month: データ月
+            year: データ年（backtestモード時）
+            month: データ月（backtestモード時）
 
         Returns:
             ティックデータのリスト
         """
         try:
-            # 年月が指定されていない場合は現在の年月を使用
-            if year is None or month is None:
-                now = datetime.now()
-                year = year or now.year
-                month = month or now.month
+            # モード別にデータソースを切り替え
+            if self.mode_config.is_backtest():
+                # バックテストモード: data/tick_dataから読み込み
+                start_date, end_date = self.mode_config.get_backtest_period()
 
-            # ティックデータの読み込み
-            tick_data = self.tick_loader.load_from_zip(
-                symbol=self.symbol,
-                year=year,
-                month=month
-            )
+                self.logger.info(
+                    f"Loading backtest data: {start_date.date()} to {end_date.date()}"
+                )
 
-            # データ検証
-            if not self.tick_loader.validate_data(tick_data):
-                self.logger.error("Tick data validation failed")
-                return []
+                tick_data = self.tick_loader.load_date_range(
+                    symbol=self.symbol,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+
+                # データ検証
+                if not self.tick_loader.validate_data(tick_data):
+                    self.logger.error("Tick data validation failed")
+                    return []
+
+            else:
+                # DEMO/本番モード: MT5からリアルタイムデータを取得
+                self.logger.info(
+                    f"Loading real-time data from MT5 (last 30 days)"
+                )
+
+                # DataFrameを取得
+                df = self.mt5_loader.load_recent_ticks(days=30)
+
+                # DataFrameをList[Dict]形式に変換
+                tick_data = df.to_dict('records')
+
+                # データ検証
+                if not self.mt5_loader.validate_data(df):
+                    self.logger.error("MT5 tick data validation failed")
+                    return []
 
             return tick_data
 
@@ -321,7 +350,7 @@ class AIAnalyzer:
 
     def _save_to_database(self, ai_result: Dict, market_data: Dict) -> bool:
         """
-        AI判断結果をデータベースに保存
+        AI判断結果をデータベースに保存（モード別テーブル）
 
         Args:
             ai_result: AI判断結果
@@ -334,9 +363,12 @@ class AIAnalyzer:
             conn = psycopg2.connect(**self.db_config)
             cursor = conn.cursor()
 
+            # モード別のテーブル名を取得
+            table_name = self.table_names['ai_judgments']
+
             # ai_judgmentsテーブルに保存
-            insert_query = """
-                INSERT INTO ai_judgments
+            insert_query = f"""
+                INSERT INTO {table_name}
                 (timestamp, symbol, action, confidence, reasoning, market_data)
                 VALUES (%s, %s, %s, %s, %s, %s)
             """
@@ -354,7 +386,7 @@ class AIAnalyzer:
             cursor.close()
             conn.close()
 
-            self.logger.info("AI judgment saved to database")
+            self.logger.info(f"AI judgment saved to database ({table_name})")
             return True
 
         except Exception as e:
@@ -383,7 +415,7 @@ class AIAnalyzer:
 
     def get_recent_judgments(self, limit: int = 10) -> List[Dict]:
         """
-        最近のAI判断履歴を取得
+        最近のAI判断履歴を取得（モード別テーブル）
 
         Args:
             limit: 取得件数
@@ -395,7 +427,10 @@ class AIAnalyzer:
             conn = psycopg2.connect(**self.db_config)
             cursor = conn.cursor()
 
-            query = """
+            # モード別のテーブル名を取得
+            table_name = self.table_names['ai_judgments']
+
+            query = f"""
                 SELECT
                     id,
                     timestamp,
@@ -404,7 +439,7 @@ class AIAnalyzer:
                     confidence,
                     reasoning,
                     created_at
-                FROM ai_judgments
+                FROM {table_name}
                 WHERE symbol = %s
                 ORDER BY created_at DESC
                 LIMIT %s
