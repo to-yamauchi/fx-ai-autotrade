@@ -30,6 +30,7 @@ import sys
 import logging
 import os
 from datetime import datetime
+from dotenv import load_dotenv
 
 from src.utils.startup_checker import StartupChecker
 from src.utils.trade_mode import get_trade_mode_config
@@ -307,6 +308,9 @@ def run_live_mode():
 
 def main():
     """メインエントリーポイント"""
+    # .envファイルを読み込み
+    load_dotenv()
+
     # ログ設定
     setup_logging()
     logger = logging.getLogger(__name__)
