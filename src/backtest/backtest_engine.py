@@ -140,7 +140,7 @@ class BacktestEngine:
         tick_data = []
         for idx, row in tick_df.iterrows():
             tick_data.append({
-                'time': row['time'],
+                'time': row['timestamp'],  # カラム名は'timestamp'
                 'bid': row['bid'],
                 'ask': row['ask']
             })
