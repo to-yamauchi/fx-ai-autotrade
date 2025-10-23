@@ -34,7 +34,7 @@ print(f"Win rate: {results['win_rate']:.2f}%")
 """
 
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import logging
 import pandas as pd
 import psycopg2
@@ -172,16 +172,44 @@ class BacktestEngine:
         self.logger.info(f"Loaded {len(tick_data)} ticks")
         self.logger.info("")
 
-        # 2. 時系列でAI分析を実行
-        self.logger.info("Running time-series AI analysis...")
+        # 2. 日ごとのループでバックテスト実行
+        self.logger.info("Running daily backtest with reviews...")
 
-        current_time = self.start_date
-        analysis_count = 0
+        current_date = self.start_date.date()
+        end_date = self.end_date.date()
+        day_count = 0
+        review_result = None  # 前日の振り返り結果
 
-        while current_time <= self.end_date:
-            self.current_time = current_time
+        while current_date <= end_date:
+            self.logger.info("")
+            self.logger.info("-" * 80)
+            self.logger.info(f"Date: {current_date}")
+            self.logger.info("-" * 80)
 
-            # AI分析を実行（この時点までのデータを使用）
+            # === 06:00 前日振り返り（初日以外） ===
+            if day_count > 0:
+                self.logger.info("06:00 - Running daily review...")
+                previous_day_trades = self._get_trades_for_date(current_date - timedelta(days=1))
+
+                if previous_day_trades:
+                    review_result = self._run_daily_review(
+                        previous_day_trades,
+                        current_date - timedelta(days=1)
+                    )
+
+                    if review_result:
+                        self.logger.info(
+                            f"Review completed. Score: {review_result.get('score', {}).get('total', 'N/A')}"
+                        )
+                else:
+                    self.logger.info("No trades on previous day, skipping review")
+
+            # === 1日分のAI分析とトレード実行 ===
+            # TODO: 本来は08:00に朝の詳細分析、12:00/16:00/21:30に定期更新
+            # 現在は簡易版として24時間ごとに1回実行
+            current_time = datetime.combine(current_date, datetime.min.time())
+
+            self.logger.info(f"Running AI analysis for {current_date}...")
             ai_result = self._analyze_at_time(current_time)
 
             if ai_result and ai_result.get('action') != 'HOLD':
@@ -189,18 +217,28 @@ class BacktestEngine:
                 self._execute_trade(ai_result, current_time)
 
             # 市場価格を更新（既存ポジションのSL/TPチェック）
-            self._update_market_price(current_time, tick_data)
+            # 当日の全ティックをチェック
+            next_date = current_date + timedelta(days=1)
+            for tick in tick_data:
+                tick_time = tick['time']
+                if current_date <= tick_time.date() < next_date:
+                    self.simulator.update_market_price(
+                        bid=tick['bid'],
+                        ask=tick['ask'],
+                        timestamp=tick_time
+                    )
 
-            # 次のサンプリング時刻へ
-            current_time += self.sampling_interval
-            analysis_count += 1
-
-            if analysis_count % 10 == 0:
+            # 進捗表示
+            if day_count % 5 == 0:
                 self.logger.info(
-                    f"Progress: {current_time.date()}, "
+                    f"Progress: {current_date}, "
                     f"Balance: {self.simulator.balance:,.0f}, "
                     f"Open Positions: {len(self.simulator.open_positions)}"
                 )
+
+            # 次の日へ
+            current_date += timedelta(days=1)
+            day_count += 1
 
         # 3. すべてのポジションをクローズ
         self.logger.info("")
@@ -434,6 +472,88 @@ class BacktestEngine:
 
         except Exception as e:
             self.logger.error(f"Failed to save backtest results: {e}")
+
+    def _get_trades_for_date(self, target_date: date) -> List[Dict]:
+        """
+        特定日のトレード履歴を取得
+
+        Args:
+            target_date: 対象日
+
+        Returns:
+            トレードリスト
+        """
+        trades = []
+
+        for trade in self.simulator.closed_positions:
+            entry_time = trade.get('entry_time')
+            if entry_time and entry_time.date() == target_date:
+                trades.append({
+                    'entry_time': entry_time.isoformat(),
+                    'exit_time': trade.get('exit_time').isoformat() if trade.get('exit_time') else None,
+                    'direction': trade.get('action'),
+                    'entry_price': trade.get('entry_price'),
+                    'exit_price': trade.get('exit_price'),
+                    'pips': trade.get('profit_pips', 0),
+                    'profit_loss': trade.get('profit', 0),
+                    'exit_reason': trade.get('exit_reason', 'unknown')
+                })
+
+        return trades
+
+    def _run_daily_review(
+        self,
+        previous_day_trades: List[Dict],
+        review_date: date
+    ) -> Optional[Dict]:
+        """
+        前日振り返りを実行
+
+        Args:
+            previous_day_trades: 前日のトレード履歴
+            review_date: 振り返り対象日
+
+        Returns:
+            振り返り結果、失敗時はNone
+        """
+        try:
+            from src.ai_analysis.ai_analyzer import AIAnalyzer
+
+            # AIAnalyzer初期化
+            analyzer = AIAnalyzer(
+                symbol=self.symbol,
+                model='pro',  # 振り返りはGemini Pro使用
+                backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
+                backtest_end_date=self.end_date.strftime('%Y-%m-%d')
+            )
+
+            # 統計情報を生成
+            total_pips = sum(t.get('pips', 0) for t in previous_day_trades)
+            win_count = sum(1 for t in previous_day_trades if t.get('profit_loss', 0) > 0)
+            total_count = len(previous_day_trades)
+            win_rate = f"{(win_count / total_count * 100):.1f}%" if total_count > 0 else "0%"
+
+            statistics = {
+                'total_pips': total_pips,
+                'win_rate': win_rate,
+                'total_trades': total_count,
+                'win_trades': win_count,
+                'loss_trades': total_count - win_count
+            }
+
+            # 振り返り実行
+            review_result = analyzer.daily_review(
+                previous_day_trades=previous_day_trades,
+                prediction=None,  # TODO: 前日の予測を保存して使用
+                actual_market=None,  # TODO: 実際の市場動向を計算
+                statistics=statistics
+            )
+
+            return review_result
+
+        except Exception as e:
+            self.logger.error(f"Daily review failed: {e}")
+            return None
 
 
 # モジュールのエクスポート
