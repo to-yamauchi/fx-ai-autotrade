@@ -192,7 +192,7 @@ class BacktestEngine:
 
         # 2. 日ごとのループでバックテスト実行
         print("🔄 バックテスト実行中...")
-        print("")
+        print("=" * 80)
 
         current_date = self.start_date.date()
         end_date = self.end_date.date()
@@ -201,44 +201,38 @@ class BacktestEngine:
         strategy_result = None  # 本日の戦略
 
         while current_date <= end_date:
-            print("")
-            print("-" * 80)
-            print(f"📅 {current_date}")
-            print("-" * 80)
+            # トレード前のポジション数と残高を記録
+            positions_before = len(self.simulator.open_positions)
+            balance_before = self.simulator.balance
 
             # === 06:00 前日振り返り（初日以外） ===
             if day_count > 0:
-                print("🔍 Phase 1: デイリーレビュー (06:00)...")
                 previous_day_trades = self._get_trades_for_date(current_date - timedelta(days=1))
-
                 if previous_day_trades:
                     review_result = self._run_daily_review(
                         previous_day_trades,
                         current_date - timedelta(days=1)
                     )
-                    if review_result:
-                        print(f"   ✓ スコア: {review_result.get('score', {}).get('total', 'N/A')}")
 
             # === 08:00 朝の詳細分析（Gemini Pro） ===
-            print("🌅 Phase 2: 朝の詳細分析 (08:00)...")
             strategy_result = self._run_morning_analysis(
                 current_date=current_date,
                 review_result=review_result
             )
 
+            # 戦略情報を記録
+            bias = 'N/A'
+            should_trade = False
             if strategy_result:
                 bias = strategy_result.get('daily_bias', 'N/A')
-                conf = strategy_result.get('confidence', 0)
                 should_trade = strategy_result.get('entry_conditions', {}).get('should_trade', False)
-                print(f"   ✓ バイアス: {bias}, 信頼度: {conf:.0f}%, トレード: {'○' if should_trade else '×'}")
 
             # 朝の戦略に基づいてトレード判断
             current_time = datetime.combine(current_date, datetime.min.time())
-            if strategy_result and strategy_result.get('entry_conditions', {}).get('should_trade', False):
+            if strategy_result and should_trade:
                 self._execute_trade_from_strategy(strategy_result, current_time)
 
             # === 12:00/16:00/21:30 定期更新（Gemini Flash） ===
-            print("⏰ Phase 3: 定期更新 (12:00, 16:00, 21:30)...")
             strategy_result = self._run_periodic_update(
                 current_date=current_date,
                 update_time="12:00",
@@ -256,11 +250,9 @@ class BacktestEngine:
                 update_time="21:30",
                 morning_strategy=strategy_result
             )
-            print("   ✓ 完了")
 
             # === 市場価格を更新 + Layer 3監視 ===
             # 当日の全ティックをチェック、15分ごとにLayer 3a監視実行
-            print("📈 Phase 4&5: リアルタイム監視中...", end='', flush=True)
             next_date = current_date + timedelta(days=1)
             last_monitor_time = None
             monitor_interval = timedelta(minutes=15)
@@ -301,10 +293,35 @@ class BacktestEngine:
                         )
                         layer3b_count += 1
 
-            print(f" ✓ 監視: {layer3a_count}回, 緊急: {layer3b_count}回")
+            # トレード後のポジション数と残高を確認
+            positions_after = len(self.simulator.open_positions)
+            balance_after = self.simulator.balance
+            new_entries = max(0, positions_after - positions_before)
+            new_exits = max(0, positions_before - positions_after)
+            balance_change = balance_after - balance_before
 
-            # 残高表示
-            print(f"💰 残高: {self.simulator.balance:,.0f}円, ポジション: {len(self.simulator.open_positions)}個")
+            # 1行サマリー出力
+            summary_parts = [
+                f"📅 {current_date.strftime('%Y-%m-%d')}",
+                f"バイアス:{bias}",
+            ]
+
+            # トレードがあった場合のみ詳細を追加
+            if new_entries > 0 or new_exits > 0:
+                summary_parts.append(f"新規:{new_entries}件")
+                summary_parts.append(f"決済:{new_exits}件")
+                if balance_change != 0:
+                    change_sign = '+' if balance_change > 0 else ''
+                    summary_parts.append(f"損益:{change_sign}{balance_change:,.0f}円")
+
+            summary_parts.append(f"残高:{balance_after:,.0f}円")
+            summary_parts.append(f"ポジション:{positions_after}個")
+
+            # 緊急対応があった場合は警告表示
+            if layer3b_count > 0:
+                summary_parts.append(f"⚠️緊急:{layer3b_count}回")
+
+            print(" | ".join(summary_parts))
 
             # 次の日へ
             current_date += timedelta(days=1)
@@ -356,7 +373,9 @@ class BacktestEngine:
             return ai_result
 
         except Exception as e:
-            self.logger.error(f"AI analysis failed at {timestamp}: {e}")
+            error_msg = f"❌ AI分析エラー ({timestamp}): {e}"
+            self.logger.error(error_msg, exc_info=True)
+            print(error_msg)
             return None
 
     def _execute_trade(self, ai_result: Dict, timestamp: datetime):
@@ -459,32 +478,35 @@ class BacktestEngine:
         Args:
             stats: 統計情報
         """
-        self.logger.info("")
-        self.logger.info("=" * 80)
-        self.logger.info("Backtest Results")
-        self.logger.info("=" * 80)
-        self.logger.info("")
-        self.logger.info(f"Period: {self.start_date.date()} to {self.end_date.date()}")
-        self.logger.info(f"Duration: {(self.end_date - self.start_date).days} days")
-        self.logger.info("")
-        self.logger.info(f"Initial Balance: {stats['initial_balance']:,.0f} JPY")
-        self.logger.info(f"Final Balance:   {stats['final_balance']:,.0f} JPY")
-        self.logger.info(f"Net Profit:      {stats['net_profit']:,.0f} JPY")
-        self.logger.info(f"Return:          {stats['return_pct']:.2f}%")
-        self.logger.info("")
-        self.logger.info(f"Total Trades:    {stats['total_trades']}")
-        self.logger.info(f"Winning Trades:  {stats['winning_trades']}")
-        self.logger.info(f"Losing Trades:   {stats['losing_trades']}")
-        self.logger.info(f"Win Rate:        {stats['win_rate']:.2f}%")
-        self.logger.info("")
-        self.logger.info(f"Total Profit:    {stats['total_profit']:,.0f} JPY")
-        self.logger.info(f"Total Loss:      {stats['total_loss']:,.0f} JPY")
-        self.logger.info(f"Avg Profit:      {stats['avg_profit']:,.0f} JPY")
-        self.logger.info(f"Avg Loss:        {stats['avg_loss']:,.0f} JPY")
-        self.logger.info(f"Profit Factor:   {stats['profit_factor']:.2f}")
-        self.logger.info("")
-        self.logger.info(f"Max Drawdown:    {stats['max_drawdown']:,.0f} JPY ({stats['max_drawdown_pct']:.2f}%)")
-        self.logger.info("")
+        print("")
+        print("=" * 80)
+        print("📊 バックテスト結果")
+        print("=" * 80)
+        print("")
+        print(f"期間: {self.start_date.date()} ～ {self.end_date.date()} ({(self.end_date - self.start_date).days}日間)")
+        print("")
+        print(f"初期残高:     {stats['initial_balance']:>12,.0f}円")
+        print(f"最終残高:     {stats['final_balance']:>12,.0f}円")
+        print(f"損益:         {stats['net_profit']:>12,.0f}円")
+        print(f"リターン:     {stats['return_pct']:>11.2f}%")
+        print("")
+        print(f"総トレード数: {stats['total_trades']:>12,}回")
+        print(f"勝ちトレード: {stats['winning_trades']:>12,}回")
+        print(f"負けトレード: {stats['losing_trades']:>12,}回")
+        print(f"勝率:         {stats['win_rate']:>11.2f}%")
+        print("")
+        print(f"総利益:       {stats['total_profit']:>12,.0f}円")
+        print(f"総損失:       {stats['total_loss']:>12,.0f}円")
+        print(f"平均利益:     {stats['avg_profit']:>12,.0f}円")
+        print(f"平均損失:     {stats['avg_loss']:>12,.0f}円")
+        print(f"プロフィット" f"ファクター: {stats['profit_factor']:>8.2f}")
+        print("")
+        print(f"最大ドロー" f"ダウン:   {stats['max_drawdown']:>12,.0f}円 ({stats['max_drawdown_pct']:.2f}%)")
+        print("")
+
+        # ログファイルにも記録
+        self.logger.info(f"Backtest completed: Period={self.start_date.date()} to {self.end_date.date()}, "
+                        f"Return={stats['return_pct']:.2f}%, Win Rate={stats['win_rate']:.2f}%")
 
     def _save_results(self, stats: Dict):
         """
@@ -620,7 +642,9 @@ class BacktestEngine:
             return review_result
 
         except Exception as e:
-            self.logger.error(f"Daily review failed: {e}")
+            error_msg = f"❌ Phase 1エラー（デイリーレビュー失敗）: {e}"
+            self.logger.error(error_msg, exc_info=True)
+            print(error_msg)
             return None
 
     def _run_morning_analysis(
@@ -657,17 +681,23 @@ class BacktestEngine:
             # TODO: より効率的な方法に改善（データを2重取得している）
             tick_data = analyzer._load_tick_data()
             if not tick_data:
-                self.logger.error("Failed to load tick data for morning analysis")
+                error_msg = "❌ Phase 2エラー（ティックデータ読み込み失敗）"
+                self.logger.error(error_msg)
+                print(error_msg)
                 return None
 
             timeframe_data = analyzer._convert_timeframes(tick_data)
             if not timeframe_data:
-                self.logger.error("Failed to convert timeframes for morning analysis")
+                error_msg = "❌ Phase 2エラー（時間足変換失敗）"
+                self.logger.error(error_msg)
+                print(error_msg)
                 return None
 
             indicators = analyzer._calculate_indicators(timeframe_data)
             if not indicators:
-                self.logger.error("Failed to calculate indicators for morning analysis")
+                error_msg = "❌ Phase 2エラー（テクニカル指標計算失敗）"
+                self.logger.error(error_msg)
+                print(error_msg)
                 return None
 
             market_data = analyzer.data_standardizer.standardize_for_ai(
@@ -689,7 +719,9 @@ class BacktestEngine:
             return strategy_result
 
         except Exception as e:
-            self.logger.error(f"Morning analysis failed: {e}", exc_info=True)
+            error_msg = f"❌ Phase 2エラー（朝の詳細分析失敗）: {e}"
+            self.logger.error(error_msg, exc_info=True)
+            print(error_msg)
             return None
 
     def _run_periodic_update(
@@ -791,7 +823,9 @@ class BacktestEngine:
             return morning_strategy
 
         except Exception as e:
-            self.logger.error(f"Periodic update failed at {update_time}: {e}", exc_info=True)
+            error_msg = f"❌ Phase 3エラー（定期更新失敗 {update_time}）: {e}"
+            self.logger.error(error_msg, exc_info=True)
+            print(error_msg)
             return morning_strategy
 
     def _apply_periodic_changes(
@@ -951,7 +985,9 @@ class BacktestEngine:
                         position['stop_loss'] = new_sl
 
         except Exception as e:
-            self.logger.error(f"Layer 3a monitoring failed: {e}")
+            error_msg = f"❌ Phase 4エラー（Layer 3a監視失敗）: {e}"
+            self.logger.error(error_msg, exc_info=True)
+            print(error_msg)
 
     def _detect_anomaly(
         self,
@@ -1010,7 +1046,9 @@ class BacktestEngine:
             return None
 
         except Exception as e:
-            self.logger.error(f"Anomaly detection failed: {e}")
+            error_msg = f"❌ 異常検知エラー: {e}"
+            self.logger.error(error_msg, exc_info=True)
+            print(error_msg)
             return None
 
     def _run_layer3b_emergency(
@@ -1094,7 +1132,9 @@ class BacktestEngine:
                         self.simulator.close_position(pos, reason=f"Layer3b partial: {emergency_result.get('reasoning')}")
 
         except Exception as e:
-            self.logger.error(f"Layer 3b emergency evaluation failed: {e}", exc_info=True)
+            error_msg = f"❌ Phase 5エラー（Layer 3b緊急評価失敗）: {e}"
+            self.logger.error(error_msg, exc_info=True)
+            print(error_msg)
             # エラー時は安全のため全決済
             if self.simulator.open_positions:
                 self.logger.error("Emergency: Closing all positions due to evaluation error")
@@ -1198,7 +1238,9 @@ class BacktestEngine:
             self._execute_trade(ai_result, timestamp)
 
         except Exception as e:
-            self.logger.error(f"Failed to execute trade from strategy: {e}")
+            error_msg = f"❌ トレード実行エラー: {e}"
+            self.logger.error(error_msg, exc_info=True)
+            print(error_msg)
 
 
 # モジュールのエクスポート
