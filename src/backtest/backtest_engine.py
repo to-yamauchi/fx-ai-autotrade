@@ -1303,7 +1303,7 @@ class BacktestEngine:
         daily_strategy: Optional[Dict] = None
     ):
         """
-        Layer 3b緊急評価を実行（異常検知時）
+        Layer 3b緊急評価を実行（異常検知時、ポジション保有時のみ）
 
         Args:
             anomaly_info: 異常検知情報
@@ -1313,6 +1313,13 @@ class BacktestEngine:
         """
         try:
             from src.ai_analysis.ai_analyzer import AIAnalyzer
+
+            # ポジションがない場合は評価不要（リスクなし）
+            if not self.simulator.open_positions:
+                self.logger.debug(
+                    f"Anomaly detected but no positions - skipping Layer 3b evaluation"
+                )
+                return
 
             self.logger.warning(
                 f"ANOMALY DETECTED: {anomaly_info.get('type')} "
