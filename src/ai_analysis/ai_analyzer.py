@@ -1075,6 +1075,17 @@ class AIAnalyzer:
                      positions_action, entry_recommendation, summary, market_data,
                      backtest_start_date, backtest_end_date, created_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (update_date, update_time, symbol, backtest_start_date, backtest_end_date)
+                    DO UPDATE SET
+                        update_type = EXCLUDED.update_type,
+                        market_assessment = EXCLUDED.market_assessment,
+                        strategy_validity = EXCLUDED.strategy_validity,
+                        recommended_changes = EXCLUDED.recommended_changes,
+                        positions_action = EXCLUDED.positions_action,
+                        entry_recommendation = EXCLUDED.entry_recommendation,
+                        summary = EXCLUDED.summary,
+                        market_data = EXCLUDED.market_data,
+                        created_at = EXCLUDED.created_at
                 """
 
                 cursor.execute(insert_query, (
@@ -1101,6 +1112,17 @@ class AIAnalyzer:
                      market_assessment, strategy_validity, recommended_changes,
                      positions_action, entry_recommendation, summary, market_data, created_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (update_date, update_time, symbol)
+                    DO UPDATE SET
+                        update_type = EXCLUDED.update_type,
+                        market_assessment = EXCLUDED.market_assessment,
+                        strategy_validity = EXCLUDED.strategy_validity,
+                        recommended_changes = EXCLUDED.recommended_changes,
+                        positions_action = EXCLUDED.positions_action,
+                        entry_recommendation = EXCLUDED.entry_recommendation,
+                        summary = EXCLUDED.summary,
+                        market_data = EXCLUDED.market_data,
+                        created_at = EXCLUDED.created_at
                 """
 
                 cursor.execute(insert_query, (
