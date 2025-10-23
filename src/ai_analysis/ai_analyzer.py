@@ -721,12 +721,14 @@ class AIAnalyzer:
             with open(prompt_path, 'r', encoding='utf-8') as f:
                 prompt_template = f.read()
 
-            # データを埋め込む
+            # データを埋め込む（replace を使って {} の問題を回避）
             import json
-            prompt = prompt_template.format(
-                market_data_json=json.dumps(market_data, ensure_ascii=False, indent=2),
-                review_json=json.dumps(review_result, ensure_ascii=False, indent=2),
-                past_statistics_json=json.dumps(past_statistics, ensure_ascii=False, indent=2)
+            prompt = prompt_template.replace(
+                '{market_data_json}', json.dumps(market_data, ensure_ascii=False, indent=2)
+            ).replace(
+                '{review_json}', json.dumps(review_result, ensure_ascii=False, indent=2)
+            ).replace(
+                '{past_statistics_json}', json.dumps(past_statistics, ensure_ascii=False, indent=2)
             )
 
             self.logger.info("Calling Gemini Pro for morning analysis...")

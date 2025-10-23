@@ -273,8 +273,7 @@ class BacktestEngine:
                     # 市場価格を更新
                     self.simulator.update_market_price(
                         bid=tick['bid'],
-                        ask=tick['ask'],
-                        timestamp=tick_time
+                        ask=tick['ask']
                     )
 
                     # === Phase 4: Layer 3a監視（15分ごと、ポジション保有時） ===

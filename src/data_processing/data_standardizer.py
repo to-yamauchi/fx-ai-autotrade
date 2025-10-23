@@ -117,7 +117,7 @@ class DataStandardizer:
             ... )
             >>> print(json.dumps(standardized, indent=2, ensure_ascii=False))
         """
-        self.logger.info(f"データ標準化開始: {symbol}")
+        self.logger.debug(f"データ標準化開始: {symbol}")
 
         standardized = {
             'timestamp': datetime.now().isoformat(),
@@ -147,7 +147,7 @@ class DataStandardizer:
             indicators, timeframe_data
         )
 
-        self.logger.info("データ標準化完了")
+        self.logger.debug("データ標準化完了")
 
         return standardized
 

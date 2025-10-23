@@ -149,7 +149,7 @@ class TimeframeConverter:
         if not tick_data:
             raise ValueError("tick_dataが空です")
 
-        self.logger.info(
+        self.logger.debug(
             f"時間足変換開始: {len(tick_data)} 件のティックデータ → {timeframe}"
         )
 
@@ -202,7 +202,7 @@ class TimeframeConverter:
             'volume': 'int64'
         })
 
-        self.logger.info(
+        self.logger.debug(
             f"時間足変換完了: {len(ohlcv)} 本の{timeframe}ローソク足を生成"
         )
 
@@ -240,7 +240,7 @@ class TimeframeConverter:
             dict_keys(['D1', 'H4', 'H1', 'M15'])
             >>> print(f"H1足: {len(all_ohlcv['H1'])} 本")
         """
-        self.logger.info(
+        self.logger.debug(
             f"全時間足変換開始: {len(tick_data)} 件のティックデータ"
         )
 
@@ -260,7 +260,7 @@ class TimeframeConverter:
                 # エラーが発生しても他の時間足の変換を続行
                 continue
 
-        self.logger.info(
+        self.logger.debug(
             f"全時間足変換完了: {len(result)} 種類の時間足を生成"
         )
 
@@ -362,7 +362,7 @@ class TimeframeConverter:
                 )
                 return False
 
-        self.logger.info("OHLCVデータの検証成功")
+        self.logger.debug("OHLCVデータの検証成功")
         return True
 
 
