@@ -219,7 +219,7 @@ def main():
             print("   以下を確認してください：")
             print("   1. .envファイルにGEMINI_API_KEYが正しく設定されているか")
             print("   2. APIキーが有効か（https://aistudio.google.com/app/apikey で確認）")
-            print("   3. Geminiモデル名が正しいか（GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, GEMINI_MODEL_FLASH_8B）")
+            print("   3. Geminiモデル名が正しいか（GEMINI_MODEL_DAILY_ANALYSIS, GEMINI_MODEL_PERIODIC_UPDATE, GEMINI_MODEL_POSITION_MONITOR）")
             print("   4. インターネット接続が正常か")
             print("")
             return 1
