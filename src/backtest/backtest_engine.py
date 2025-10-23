@@ -42,6 +42,7 @@ from psycopg2.extras import Json
 import os
 
 from src.backtest.trade_simulator import TradeSimulator
+from src.backtest.csv_tick_loader import CSVTickLoader
 from src.ai_analysis.ai_analyzer import AIAnalyzer
 from src.data_processing.mt5_data_loader import MT5DataLoader
 from src.rule_engine.trading_rules import TradingRules
@@ -62,7 +63,8 @@ class BacktestEngine:
         initial_balance: float = 100000.0,
         ai_model: str = 'flash',
         sampling_interval_hours: int = 24,  # サンプリング間隔（時間）
-        risk_percent: float = 1.0
+        risk_percent: float = 1.0,
+        csv_path: Optional[str] = None  # CSVファイルパス（指定時はCSVを使用）
     ):
         """
         バックテストエンジンの初期化
@@ -75,6 +77,7 @@ class BacktestEngine:
             ai_model: AIモデル（flash/pro/flash-8b）
             sampling_interval_hours: AI分析のサンプリング間隔（時間）
             risk_percent: リスク許容率（%）
+            csv_path: CSVファイルパス（指定時はCSVからデータ読み込み、未指定時はMT5）
         """
         self.symbol = symbol
         self.start_date = datetime.strptime(start_date, '%Y-%m-%d')
@@ -83,11 +86,20 @@ class BacktestEngine:
         self.ai_model = ai_model
         self.sampling_interval = timedelta(hours=sampling_interval_hours)
         self.risk_percent = risk_percent
+        self.csv_path = csv_path
         self.logger = logging.getLogger(__name__)
 
         # コンポーネント初期化
         self.simulator = TradeSimulator(initial_balance=initial_balance, symbol=symbol)
-        self.data_loader = MT5DataLoader(symbol=symbol)
+
+        # データローダー：CSVまたはMT5
+        if csv_path:
+            self.data_loader = CSVTickLoader(csv_path=csv_path, symbol=symbol)
+            self.use_csv = True
+        else:
+            self.data_loader = MT5DataLoader(symbol=symbol)
+            self.use_csv = False
+
         self.rules = TradingRules()
 
         # バックテスト実行状態
@@ -129,8 +141,19 @@ class BacktestEngine:
 
         # 1. 全期間のデータを取得
         self.logger.info("Loading historical data...")
-        days = (self.end_date - self.start_date).days
-        tick_df = self.data_loader.load_recent_ticks(days=days + 30)  # 余裕を持って取得
+
+        if self.use_csv:
+            # CSVファイルから読み込み
+            self.logger.info(f"Using CSV file: {self.csv_path}")
+            tick_df = self.data_loader.load_ticks(
+                start_date=self.start_date.strftime('%Y-%m-%d'),
+                end_date=self.end_date.strftime('%Y-%m-%d')
+            )
+        else:
+            # MT5から読み込み
+            self.logger.info("Using MT5 data")
+            days = (self.end_date - self.start_date).days
+            tick_df = self.data_loader.load_recent_ticks(days=days + 30)
 
         if tick_df is None or tick_df.empty:
             self.logger.error("Failed to load historical data")
