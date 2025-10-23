@@ -141,7 +141,7 @@ class TickDataLoader:
         zip_filename = f"ticks_{symbol}-oj5k_{year:04d}-{month:02d}.zip"
         zip_path = os.path.join(self.data_dir, symbol, zip_filename)
 
-        self.logger.info(f"ティックデータ読み込み開始: {zip_path}")
+        self.logger.debug(f"ティックデータ読み込み開始: {zip_path}")
 
         tick_data = []
 
@@ -199,7 +199,7 @@ class TickDataLoader:
                             continue
 
             # 読み込み成功
-            self.logger.info(
+            self.logger.debug(
                 f"ティックデータ読み込み完了: {len(tick_data)} 件 "
                 f"({symbol} {year}-{month:02d})"
             )
@@ -262,7 +262,7 @@ class TickDataLoader:
             if tick['bid'] >= tick['ask']:
                 self.logger.warning(f"Bid >= Ask: bid={tick['bid']}, ask={tick['ask']} (行 {i})")
 
-        self.logger.info("ティックデータの検証成功")
+        self.logger.debug("ティックデータの検証成功")
         return True
 
     def load_date_range(
@@ -301,7 +301,7 @@ class TickDataLoader:
                 f"end_date ({end_date.date()})"
             )
 
-        self.logger.info(
+        self.logger.debug(
             f"期間指定データ読み込み開始: {symbol} "
             f"{start_date.date()} ～ {end_date.date()}"
         )
@@ -318,7 +318,7 @@ class TickDataLoader:
             else:
                 current_date = current_date.replace(month=current_date.month + 1)
 
-        self.logger.info(f"読み込み対象: {len(months_to_load)}ヶ月分のデータ")
+        self.logger.debug(f"読み込み対象: {len(months_to_load)}ヶ月分のデータ")
 
         # 各月のデータを読み込んで結合
         all_tick_data = []
@@ -355,7 +355,7 @@ class TickDataLoader:
             if start_date <= tick['timestamp'] <= end_date
         ]
 
-        self.logger.info(
+        self.logger.debug(
             f"期間指定データ読み込み完了: {len(filtered_data):,} 件 "
             f"({len(months_to_load)}ヶ月分, "
             f"フィルタ前: {len(all_tick_data):,} 件)"

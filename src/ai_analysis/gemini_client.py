@@ -136,6 +136,50 @@ class GeminiClient:
                 'reasoning': f'Error occurred during AI analysis: {str(e)}'
             }
 
+    def generate_response(
+        self,
+        prompt: str,
+        model: str = 'flash',
+        temperature: float = 0.3,
+        max_tokens: int = 2000
+    ) -> str:
+        """
+        汎用的なプロンプトに対してAI応答を生成する
+
+        Args:
+            prompt: AIに送信するプロンプト
+            model: 使用するモデル ('pro' / 'flash' / 'flash-lite')
+            temperature: 応答のランダム性（0.0-1.0）
+            max_tokens: 最大トークン数
+
+        Returns:
+            AIの応答テキスト
+
+        Raises:
+            Exception: API呼び出しエラー時
+        """
+        # モデルの選択
+        selected_model = self._select_model(model)
+
+        try:
+            # 生成設定
+            generation_config = {
+                'temperature': temperature,
+                'max_output_tokens': max_tokens,
+            }
+
+            # AI応答の生成
+            response = selected_model.generate_content(
+                prompt,
+                generation_config=generation_config
+            )
+
+            return response.text
+
+        except Exception as e:
+            self.logger.error(f"❌ Generate response error: {e}")
+            raise
+
     def _build_analysis_prompt(self, market_data: Dict) -> str:
         """
         分析プロンプトを構築する
