@@ -1553,7 +1553,7 @@ class BacktestEngine:
 
             self.logger.info(
                 f"Phase 5 - Layer 3b緊急評価開始: "
-                f"モデル={config.model_daily_analysis}, "
+                f"モデル={config.model_emergency_evaluation}, "
                 f"日付={tick_time.strftime('%Y-%m-%d')}, 時刻={tick_time.strftime('%H:%M:%S')}, "
                 f"異常タイプ={anomaly_info.get('type')}, 深刻度={anomaly_info.get('severity')}"
             )
@@ -1572,7 +1572,7 @@ class BacktestEngine:
 
             analyzer = AIAnalyzer(
                 symbol=self.symbol,
-                model='pro',  # 緊急時はGemini Pro使用
+                model=config.model_emergency_evaluation,  # 設定から緊急評価用モデルを取得
                 backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
                 backtest_end_date=self.end_date.strftime('%Y-%m-%d')
             )

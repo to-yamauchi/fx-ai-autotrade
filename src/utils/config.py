@@ -67,9 +67,10 @@ class Config:
     # ========================================
     # 各Phaseで異なるプロバイダーのモデルを使用可能
     # プロバイダーはモデル名から自動判定（gemini-*/gpt-*/claude-*）
-    model_daily_analysis: str             # Phase 1, 2, 5用
+    model_daily_analysis: str             # Phase 1, 2用
     model_periodic_update: str            # Phase 3用
     model_position_monitor: str           # Phase 4用
+    model_emergency_evaluation: str       # Phase 5用
 
     # 後方互換性のため保持（非推奨）
     gemini_model_daily_analysis: Optional[str]
@@ -80,9 +81,11 @@ class Config:
     ai_temperature_daily_analysis: float
     ai_temperature_periodic_update: float
     ai_temperature_position_monitor: float
+    ai_temperature_emergency_evaluation: float
     ai_max_tokens_daily_analysis: Optional[int]  # None=LLMデフォルト使用
     ai_max_tokens_periodic_update: Optional[int]
     ai_max_tokens_position_monitor: Optional[int]
+    ai_max_tokens_emergency_evaluation: Optional[int]
 
     # ========================================
     # リスク管理
@@ -228,6 +231,7 @@ def load_config() -> Config:
         model_daily_analysis=_get_env_str('MODEL_DAILY_ANALYSIS', '') or _get_env_str('GEMINI_MODEL_DAILY_ANALYSIS', 'gemini-2.5-flash'),
         model_periodic_update=_get_env_str('MODEL_PERIODIC_UPDATE', '') or _get_env_str('GEMINI_MODEL_PERIODIC_UPDATE', 'gemini-2.5-flash'),
         model_position_monitor=_get_env_str('MODEL_POSITION_MONITOR', '') or _get_env_str('GEMINI_MODEL_POSITION_MONITOR', 'gemini-2.5-flash'),
+        model_emergency_evaluation=_get_env_str('MODEL_EMERGENCY_EVALUATION', 'gemini-2.5-pro'),
 
         # 後方互換性のため保持（非推奨）
         gemini_model_daily_analysis=_get_env_optional_str('GEMINI_MODEL_DAILY_ANALYSIS'),
@@ -238,9 +242,11 @@ def load_config() -> Config:
         ai_temperature_daily_analysis=_get_env_float('AI_TEMPERATURE_DAILY_ANALYSIS', 0.3),
         ai_temperature_periodic_update=_get_env_float('AI_TEMPERATURE_PERIODIC_UPDATE', 0.3),
         ai_temperature_position_monitor=_get_env_float('AI_TEMPERATURE_POSITION_MONITOR', 0.2),
+        ai_temperature_emergency_evaluation=_get_env_float('AI_TEMPERATURE_EMERGENCY_EVALUATION', 0.3),
         ai_max_tokens_daily_analysis=_get_env_optional_int('AI_MAX_TOKENS_DAILY_ANALYSIS'),
         ai_max_tokens_periodic_update=_get_env_optional_int('AI_MAX_TOKENS_PERIODIC_UPDATE'),
         ai_max_tokens_position_monitor=_get_env_optional_int('AI_MAX_TOKENS_POSITION_MONITOR'),
+        ai_max_tokens_emergency_evaluation=_get_env_optional_int('AI_MAX_TOKENS_EMERGENCY_EVALUATION'),
 
         # リスク管理
         position_size_default=_get_env_float('POSITION_SIZE_DEFAULT', 0.1),
