@@ -107,6 +107,48 @@ class CSVTickLoader:
 
         return df
 
+    def _normalize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Normalize CSV column names to standard format
+
+        Supports common variations:
+        - time, datetime, date → timestamp
+        - Bid, BID → bid
+        - Ask, ASK → ask
+        - Volume, VOLUME, volume_real → volume
+
+        Args:
+            df: Input dataframe
+
+        Returns:
+            pd.DataFrame: Dataframe with normalized column names
+        """
+        # Create column mapping (case-insensitive)
+        column_map = {}
+
+        for col in df.columns:
+            col_lower = col.lower().strip()
+
+            # Timestamp variations
+            if col_lower in ['time', 'datetime', 'date']:
+                column_map[col] = 'timestamp'
+            # Bid variations
+            elif col_lower == 'bid':
+                column_map[col] = 'bid'
+            # Ask variations
+            elif col_lower == 'ask':
+                column_map[col] = 'ask'
+            # Volume variations
+            elif col_lower in ['volume', 'volume_real', 'vol']:
+                column_map[col] = 'volume'
+
+        # Apply renaming
+        if column_map:
+            df = df.rename(columns=column_map)
+            self.logger.info(f"Normalized columns: {column_map}")
+
+        return df
+
     def _load_csv_file(self, filepath: str) -> pd.DataFrame:
         """
         Load single CSV file (supports .csv and .zip files)
@@ -127,14 +169,19 @@ class CSVTickLoader:
                 # Read CSV directly
                 df = pd.read_csv(filepath)
 
+            # Normalize column names (auto-rename common variations)
+            df = self._normalize_columns(df)
+
             # Validate columns
             required_cols = ['timestamp', 'bid', 'ask']
             missing_cols = [col for col in required_cols if col not in df.columns]
 
             if missing_cols:
+                available_cols = list(df.columns)
                 raise ValueError(
                     f"Missing required columns: {missing_cols}. "
-                    f"CSV must have: timestamp, bid, ask (volume is optional)"
+                    f"Available columns: {available_cols}. "
+                    f"CSV must have: timestamp (or time/datetime), bid, ask (volume is optional)"
                 )
 
             # Convert timestamp to datetime
