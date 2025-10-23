@@ -7,14 +7,17 @@
 バックテスト用テーブルのデータを削除するユーティリティスクリプト
 
 使用方法:
-  python reset_backtest_data.py                    # .envの設定を使用
+  python reset_backtest_data.py                    # .envの設定を使用（期間指定）
   python reset_backtest_data.py --yes              # 確認なしで削除
   python reset_backtest_data.py --symbol USDJPY --start 2024-01-01 --end 2024-12-31
+  python reset_backtest_data.py --all              # 全backtestテーブルをリセット
+  python reset_backtest_data.py --all --symbol USDJPY --yes  # USDJPY全期間削除（確認なし）
 
 オプション:
   --symbol SYMBOL    通貨ペア（デフォルト: .envのBACKTEST_SYMBOL）
   --start YYYY-MM-DD 開始日（デフォルト: .envのBACKTEST_START_DATE）
   --end YYYY-MM-DD   終了日（デフォルト: .envのBACKTEST_END_DATE）
+  --all              backtest_で始まる全テーブルをリセット（全期間・全通貨ペア）
   --yes              確認プロンプトをスキップ
 
 作成日: 2025-10-23
@@ -47,6 +50,12 @@ def main():
 
   # 特定の期間を指定
   python reset_backtest_data.py --symbol USDJPY --start 2024-01-01 --end 2024-12-31
+
+  # 全backtestテーブルをリセット（全期間・全通貨ペア）
+  python reset_backtest_data.py --all
+
+  # 特定通貨ペアの全期間削除（確認なし）
+  python reset_backtest_data.py --all --symbol USDJPY --yes
         """
     )
 
@@ -64,6 +73,11 @@ def main():
         '--end',
         type=str,
         help='終了日（YYYY-MM-DD形式、デフォルト: .envのBACKTEST_END_DATE）'
+    )
+    parser.add_argument(
+        '--all',
+        action='store_true',
+        help='backtest_で始まる全テーブルをリセット（全期間・全通貨ペア）'
     )
     parser.add_argument(
         '--yes', '-y',
@@ -110,7 +124,16 @@ def main():
 
         # リセット実行
         confirm = not args.yes
-        success = engine.reset_backtest_tables(confirm=confirm)
+
+        if args.all:
+            # 全テーブルリセット
+            success = engine.reset_all_backtest_tables(
+                confirm=confirm,
+                symbol=args.symbol  # --symbolが指定されていればその通貨ペアのみ削除
+            )
+        else:
+            # 期間指定リセット
+            success = engine.reset_backtest_tables(confirm=confirm)
 
         if success:
             print("✓ リセットが完了しました。")
