@@ -43,20 +43,42 @@ timestamp,bid,ask,volume
 
 ### Single File
 
-Place all tick data in a single CSV file:
+Place all tick data in a single CSV file or ZIP file:
 
 ```
 data/ticks/USDJPY_2024-09.csv
 ```
 
+Or compressed:
+
+```
+data/tick_data/USDJPY/ticks_USDJPY-oj5k_2024-01.zip
+```
+
+**ZIP File Support**:
+- ZIP files are automatically detected and extracted
+- No need to manually unzip
+- Supports single CSV inside ZIP
+- File must contain `.csv` extension inside
+
 ### Multiple Files (Directory)
 
-Place multiple CSV files in a directory (will be combined):
+Place multiple CSV/ZIP files in a directory (will be combined):
+
+```
+data/tick_data/USDJPY/
+├── ticks_USDJPY-oj5k_2024-01.zip
+├── ticks_USDJPY-oj5k_2024-02.zip
+├── ticks_USDJPY-oj5k_2024-03.zip
+└── ...
+```
+
+Or mixed CSV and ZIP:
 
 ```
 data/ticks/USDJPY/
 ├── 2024-09-01.csv
-├── 2024-09-02.csv
+├── 2024-09-02.zip
 ├── 2024-09-03.csv
 └── ...
 ```
@@ -65,37 +87,53 @@ data/ticks/USDJPY/
 
 ## Usage Examples
 
-### Example 1: Single CSV File
+### Example 1: Single ZIP File
 
 ```python
 from src.backtest import BacktestEngine
 
 engine = BacktestEngine(
     symbol='USDJPY',
-    start_date='2024-09-23',
-    end_date='2024-09-30',
+    start_date='2024-01-01',
+    end_date='2024-01-31',
     initial_balance=100000.0,
     ai_model='flash',
-    csv_path='data/ticks/USDJPY_2024-09.csv'  # Specify CSV path
+    csv_path='data/tick_data/USDJPY/ticks_USDJPY-oj5k_2024-01.zip'  # ZIP file
 )
 
 results = engine.run()
 ```
 
-### Example 2: Directory with Multiple Files
+### Example 2: Single CSV File
 
 ```python
 engine = BacktestEngine(
     symbol='USDJPY',
-    start_date='2024-09-01',
+    start_date='2024-09-23',
     end_date='2024-09-30',
-    csv_path='data/ticks/USDJPY/'  # Directory path
+    initial_balance=100000.0,
+    ai_model='flash',
+    csv_path='data/ticks/USDJPY_2024-09.csv'  # CSV file
 )
 
 results = engine.run()
 ```
 
-### Example 3: MT5 Data (Default)
+### Example 3: Directory with Multiple ZIP Files
+
+```python
+# Automatically loads all ZIP/CSV files in directory
+engine = BacktestEngine(
+    symbol='USDJPY',
+    start_date='2024-01-01',
+    end_date='2024-03-31',
+    csv_path='data/tick_data/USDJPY/'  # Directory with multiple ZIPs
+)
+
+results = engine.run()
+```
+
+### Example 4: MT5 Data (Default)
 
 ```python
 # Without csv_path, uses MT5 data

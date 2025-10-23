@@ -33,6 +33,7 @@ from datetime import datetime
 from typing import Optional
 import logging
 import os
+import zipfile
 
 
 class CSVTickLoader:
@@ -108,19 +109,23 @@ class CSVTickLoader:
 
     def _load_csv_file(self, filepath: str) -> pd.DataFrame:
         """
-        Load single CSV file
+        Load single CSV file (supports .csv and .zip files)
 
         Args:
-            filepath: Path to CSV file
+            filepath: Path to CSV or ZIP file
 
         Returns:
             pd.DataFrame: Tick data
         """
-        self.logger.info(f"Reading CSV file: {filepath}")
+        self.logger.info(f"Reading file: {filepath}")
 
         try:
-            # Read CSV
-            df = pd.read_csv(filepath)
+            # Check if file is ZIP
+            if filepath.lower().endswith('.zip'):
+                df = self._load_zip_file(filepath)
+            else:
+                # Read CSV directly
+                df = pd.read_csv(filepath)
 
             # Validate columns
             required_cols = ['timestamp', 'bid', 'ask']
@@ -150,12 +155,45 @@ class CSVTickLoader:
             return df
 
         except Exception as e:
-            self.logger.error(f"Failed to load CSV file: {e}")
+            self.logger.error(f"Failed to load file: {e}")
             raise
+
+    def _load_zip_file(self, zip_path: str) -> pd.DataFrame:
+        """
+        Load CSV from ZIP file
+
+        Args:
+            zip_path: Path to ZIP file
+
+        Returns:
+            pd.DataFrame: Tick data
+        """
+        self.logger.info(f"Extracting CSV from ZIP: {zip_path}")
+
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            # Get list of CSV files in ZIP
+            csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv')]
+
+            if not csv_files:
+                raise ValueError(f"No CSV files found in ZIP: {zip_path}")
+
+            if len(csv_files) > 1:
+                self.logger.warning(
+                    f"Multiple CSV files found in ZIP. Using first one: {csv_files[0]}"
+                )
+
+            csv_file = csv_files[0]
+            self.logger.info(f"Reading CSV from ZIP: {csv_file}")
+
+            # Read CSV from ZIP
+            with zip_ref.open(csv_file) as f:
+                df = pd.read_csv(f)
+
+            return df
 
     def _load_csv_directory(self, dirpath: str) -> pd.DataFrame:
         """
-        Load all CSV files from directory
+        Load all CSV/ZIP files from directory
 
         Args:
             dirpath: Path to directory
@@ -163,24 +201,25 @@ class CSVTickLoader:
         Returns:
             pd.DataFrame: Combined tick data
         """
-        self.logger.info(f"Loading all CSV files from: {dirpath}")
+        self.logger.info(f"Loading all CSV/ZIP files from: {dirpath}")
 
-        csv_files = [
+        # Get both CSV and ZIP files
+        data_files = [
             f for f in os.listdir(dirpath)
-            if f.endswith('.csv')
+            if f.endswith('.csv') or f.endswith('.zip')
         ]
 
-        if not csv_files:
+        if not data_files:
             raise FileNotFoundError(
-                f"No CSV files found in: {dirpath}"
+                f"No CSV or ZIP files found in: {dirpath}"
             )
 
-        self.logger.info(f"Found {len(csv_files)} CSV files")
+        self.logger.info(f"Found {len(data_files)} data files")
 
         # Load all files
         dfs = []
-        for csv_file in sorted(csv_files):
-            filepath = os.path.join(dirpath, csv_file)
+        for data_file in sorted(data_files):
+            filepath = os.path.join(dirpath, data_file)
             df = self._load_csv_file(filepath)
             dfs.append(df)
 
