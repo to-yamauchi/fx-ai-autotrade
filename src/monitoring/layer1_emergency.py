@@ -65,6 +65,9 @@ class Layer1EmergencyMonitor:
         # 初期口座残高を記録
         self.initial_balance = self._get_account_balance()
 
+        # アラート履歴（重複送信を防ぐ）
+        self.alert_history: Dict[str, datetime] = {}
+
         self.logger.info(
             f"Layer1EmergencyMonitor initialized: "
             f"hard_sl={self.HARD_STOP_LOSS_PIPS}pips, "
