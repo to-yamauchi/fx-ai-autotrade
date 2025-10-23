@@ -1105,6 +1105,376 @@ class AIAnalyzer:
             self.logger.error(f"Failed to save periodic update to database: {e}")
             return False
 
+    def layer3a_monitor(
+        self,
+        position: Dict,
+        current_market_data: Dict,
+        daily_strategy: Dict
+    ) -> Dict:
+        """
+        Layer 3a 監視を実行（15分ごと、Flash-Lite）
+
+        Args:
+            position: 監視対象のポジション情報
+            current_market_data: 現在の市場データ（簡易版）
+            daily_strategy: 本日の戦略
+
+        Returns:
+            監視結果の辞書
+            {
+                'action': 'HOLD' | 'CLOSE_NOW' | 'ADJUST_SL' | 'PARTIAL_CLOSE',
+                'urgency': 'normal' | 'high',
+                'reason': '判断理由',
+                'details': {...},
+                'recommended_action': {...}
+            }
+        """
+        try:
+            self.logger.debug("Starting Layer 3a monitoring...")
+
+            # プロンプトテンプレートの読み込み
+            prompt_path = os.path.join(
+                os.path.dirname(__file__),
+                'prompts',
+                'layer3a_monitoring.txt'
+            )
+
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                prompt_template = f.read()
+
+            # データを埋め込む
+            import json
+            prompt = prompt_template.format(
+                position_json=json.dumps(position, ensure_ascii=False, indent=2),
+                current_market_json=json.dumps(current_market_data, ensure_ascii=False, indent=2),
+                daily_strategy_json=json.dumps(daily_strategy, ensure_ascii=False, indent=2)
+            )
+
+            self.logger.debug("Calling Gemini Flash-Lite for Layer 3a monitoring...")
+
+            # Gemini Flash-Lite呼び出し（超軽量、温度0.2）
+            response = self.gemini_client.generate_response(
+                prompt=prompt,
+                temperature=0.2,
+                max_tokens=500,  # 短い応答
+                model='flash-8b'  # Gemini 2.5 Flash-8B（$0.0003/call）
+            )
+
+            # JSONパース
+            import re
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = response
+
+            monitor_result = json.loads(json_str)
+
+            self.logger.debug(
+                f"Layer 3a monitoring completed. "
+                f"Action: {monitor_result.get('action', 'N/A')}"
+            )
+
+            # データベースに保存（頻度が高いので保存は任意）
+            # バックテストモードでのみ保存
+            if self.mode_config.is_backtest():
+                self._save_layer3a_monitoring_to_database(monitor_result, position, current_market_data)
+
+            return monitor_result
+
+        except Exception as e:
+            self.logger.error(f"Layer 3a monitoring failed: {e}", exc_info=True)
+            # フォールバック：HOLD
+            return {
+                'action': 'HOLD',
+                'urgency': 'normal',
+                'reason': f'監視エラーのため保留: {str(e)}',
+                'details': {
+                    'profit_status': 'unknown',
+                    'risk_level': 'unknown',
+                    'signals': []
+                },
+                'recommended_action': {
+                    'close_percent': 0,
+                    'new_sl': None,
+                    'reason': '監視エラー'
+                },
+                'error': str(e)
+            }
+
+    def _save_layer3a_monitoring_to_database(
+        self,
+        monitor_result: Dict,
+        position: Dict,
+        market_data: Dict
+    ) -> bool:
+        """
+        Layer 3a監視結果をデータベースに保存
+
+        Args:
+            monitor_result: 監視結果
+            position: ポジション情報
+            market_data: 市場データ
+
+        Returns:
+            成功時True
+        """
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+
+            # テーブル名取得（モード別）
+            table_name = self.table_names.get('layer3a_monitoring', 'backtest_layer3a_monitoring')
+
+            # バックテストモードの場合は追加カラムを含める
+            if self.mode_config.is_backtest():
+                if not self.backtest_start_date or not self.backtest_end_date:
+                    self.logger.warning(
+                        "Backtest mode but backtest dates not provided. Skipping database save."
+                    )
+                    return False
+
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (check_timestamp, symbol, action, urgency, reason,
+                     details, recommended_action, position_info, market_data,
+                     backtest_start_date, backtest_end_date, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now(),
+                    self.symbol,
+                    monitor_result.get('action', 'HOLD'),
+                    monitor_result.get('urgency', 'normal'),
+                    monitor_result.get('reason', ''),
+                    Json(monitor_result.get('details', {})),
+                    Json(monitor_result.get('recommended_action', {})),
+                    Json(position),
+                    Json(market_data),
+                    self.backtest_start_date,
+                    self.backtest_end_date,
+                    datetime.now()
+                ))
+            else:
+                # DEMOモード/本番モード
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (check_timestamp, symbol, action, urgency, reason,
+                     details, recommended_action, position_info, market_data, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now(),
+                    self.symbol,
+                    monitor_result.get('action', 'HOLD'),
+                    monitor_result.get('urgency', 'normal'),
+                    monitor_result.get('reason', ''),
+                    Json(monitor_result.get('details', {})),
+                    Json(monitor_result.get('recommended_action', {})),
+                    Json(position),
+                    Json(market_data),
+                    datetime.now()
+                ))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            self.logger.debug(f"Layer 3a monitoring saved to database ({table_name})")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to save Layer 3a monitoring to database: {e}")
+            return False
+
+    def layer3b_emergency(
+        self,
+        anomaly_info: Dict,
+        current_positions: List[Dict],
+        current_market_data: Dict,
+        daily_strategy: Dict
+    ) -> Dict:
+        """
+        Layer 3b 緊急評価を実行（異常検知時、Gemini Pro）
+
+        Args:
+            anomaly_info: 異常検知情報（Layer 2から）
+            current_positions: 現在のポジション一覧
+            current_market_data: 現在の市場データ
+            daily_strategy: 本日の戦略
+
+        Returns:
+            緊急評価結果の辞書
+            {
+                'severity': 'low' | 'medium' | 'high' | 'critical',
+                'action': 'CONTINUE' | 'CLOSE_ALL' | 'CLOSE_PARTIAL' | 'REVERSE',
+                'reasoning': '判断理由',
+                'immediate_actions': [...],
+                'risk_assessment': {...}
+            }
+        """
+        try:
+            self.logger.warning("Starting Layer 3b emergency evaluation...")
+
+            # プロンプトテンプレートの読み込み
+            prompt_path = os.path.join(
+                os.path.dirname(__file__),
+                'prompts',
+                'layer3b_emergency.txt'
+            )
+
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                prompt_template = f.read()
+
+            # データを埋め込む
+            import json
+            prompt = prompt_template.format(
+                anomaly_json=json.dumps(anomaly_info, ensure_ascii=False, indent=2),
+                positions_json=json.dumps(current_positions, ensure_ascii=False, indent=2),
+                market_json=json.dumps(current_market_data, ensure_ascii=False, indent=2),
+                strategy_json=json.dumps(daily_strategy, ensure_ascii=False, indent=2)
+            )
+
+            self.logger.warning("Calling Gemini Pro for Layer 3b emergency evaluation...")
+
+            # Gemini Pro呼び出し（高精度、温度0.2で冷静な判断）
+            response = self.gemini_client.generate_response(
+                prompt=prompt,
+                temperature=0.2,
+                max_tokens=1500,
+                model='pro'  # Gemini 2.5 Pro（緊急時は高精度）
+            )
+
+            # JSONパース
+            import re
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = response
+
+            emergency_result = json.loads(json_str)
+
+            self.logger.warning(
+                f"Layer 3b emergency evaluation completed. "
+                f"Severity: {emergency_result.get('severity', 'N/A')}, "
+                f"Action: {emergency_result.get('action', 'N/A')}"
+            )
+
+            # データベースに保存
+            self._save_layer3b_emergency_to_database(emergency_result, anomaly_info, current_market_data)
+
+            return emergency_result
+
+        except Exception as e:
+            self.logger.error(f"Layer 3b emergency evaluation failed: {e}", exc_info=True)
+            # フォールバック：保守的判断（全決済）
+            return {
+                'severity': 'critical',
+                'action': 'CLOSE_ALL',
+                'reasoning': f'緊急評価エラーのため全ポジションクローズを推奨: {str(e)}',
+                'immediate_actions': [
+                    '全ポジションを即座にクローズ',
+                    '新規エントリーを停止',
+                    'システムログを確認'
+                ],
+                'risk_assessment': {
+                    'current_risk': 'unknown',
+                    'potential_loss': 'unknown',
+                    'recommendation': '安全のため全決済'
+                },
+                'error': str(e)
+            }
+
+    def _save_layer3b_emergency_to_database(
+        self,
+        emergency_result: Dict,
+        anomaly_info: Dict,
+        market_data: Dict
+    ) -> bool:
+        """
+        Layer 3b緊急評価結果をデータベースに保存
+
+        Args:
+            emergency_result: 緊急評価結果
+            anomaly_info: 異常検知情報
+            market_data: 市場データ
+
+        Returns:
+            成功時True
+        """
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+
+            # テーブル名取得（モード別）
+            table_name = self.table_names.get('layer3b_emergency', 'backtest_layer3b_emergency')
+
+            # バックテストモードの場合は追加カラムを含める
+            if self.mode_config.is_backtest():
+                if not self.backtest_start_date or not self.backtest_end_date:
+                    self.logger.warning(
+                        "Backtest mode but backtest dates not provided. Skipping database save."
+                    )
+                    return False
+
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (event_timestamp, symbol, severity, action, reasoning,
+                     immediate_actions, risk_assessment, anomaly_info, market_data,
+                     backtest_start_date, backtest_end_date, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now(),
+                    self.symbol,
+                    emergency_result.get('severity', 'medium'),
+                    emergency_result.get('action', 'CONTINUE'),
+                    emergency_result.get('reasoning', ''),
+                    Json(emergency_result.get('immediate_actions', [])),
+                    Json(emergency_result.get('risk_assessment', {})),
+                    Json(anomaly_info),
+                    Json(market_data),
+                    self.backtest_start_date,
+                    self.backtest_end_date,
+                    datetime.now()
+                ))
+            else:
+                # DEMOモード/本番モード
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (event_timestamp, symbol, severity, action, reasoning,
+                     immediate_actions, risk_assessment, anomaly_info, market_data, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now(),
+                    self.symbol,
+                    emergency_result.get('severity', 'medium'),
+                    emergency_result.get('action', 'CONTINUE'),
+                    emergency_result.get('reasoning', ''),
+                    Json(emergency_result.get('immediate_actions', [])),
+                    Json(emergency_result.get('risk_assessment', {})),
+                    Json(anomaly_info),
+                    Json(market_data),
+                    datetime.now()
+                ))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            self.logger.warning(f"Layer 3b emergency evaluation saved to database ({table_name})")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to save Layer 3b emergency evaluation to database: {e}")
+            return False
+
 
 # モジュールのエクスポート
 __all__ = ['AIAnalyzer']

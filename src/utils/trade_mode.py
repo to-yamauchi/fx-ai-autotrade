@@ -98,7 +98,9 @@ class TradeModeConfig:
                     'positions': テーブル名,
                     'reviews': テーブル名,
                     'strategies': テーブル名,
-                    'periodic_updates': テーブル名
+                    'periodic_updates': テーブル名,
+                    'layer3a_monitoring': テーブル名,
+                    'layer3b_emergency': テーブル名
                 }
         """
         table_mapping = {
@@ -107,21 +109,27 @@ class TradeModeConfig:
                 'positions': 'backtest_positions',
                 'reviews': 'backtest_daily_reviews',
                 'strategies': 'backtest_daily_strategies',
-                'periodic_updates': 'backtest_periodic_updates'
+                'periodic_updates': 'backtest_periodic_updates',
+                'layer3a_monitoring': 'backtest_layer3a_monitoring',
+                'layer3b_emergency': 'backtest_layer3b_emergency'
             },
             TradeMode.DEMO: {
                 'ai_judgments': 'demo_ai_judgments',
                 'positions': 'demo_positions',
                 'reviews': 'demo_daily_reviews',
                 'strategies': 'demo_daily_strategies',
-                'periodic_updates': 'demo_periodic_updates'
+                'periodic_updates': 'demo_periodic_updates',
+                'layer3a_monitoring': 'demo_layer3a_monitoring',
+                'layer3b_emergency': 'demo_layer3b_emergency'
             },
             TradeMode.LIVE: {
                 'ai_judgments': 'ai_judgments',
                 'positions': 'positions',
                 'reviews': 'daily_reviews',
                 'strategies': 'daily_strategies',
-                'periodic_updates': 'periodic_updates'
+                'periodic_updates': 'periodic_updates',
+                'layer3a_monitoring': 'layer3a_monitoring',
+                'layer3b_emergency': 'layer3b_emergency'
             }
         }
 

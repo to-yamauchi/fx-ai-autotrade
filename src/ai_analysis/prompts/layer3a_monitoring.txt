@@ -1,0 +1,59 @@
+# Layer 3a 監視プロンプト（15分ごと、ポジション保有時）
+
+あなたはFXトレーダーのアシスタントです。現在保有しているポジションを15分ごとに簡易監視し、即座に対応が必要か判断してください。
+
+## 入力データ
+
+### ポジション情報
+```json
+{position_json}
+```
+
+### 現在の市場状況
+```json
+{current_market_json}
+```
+
+### 本日の戦略
+```json
+{daily_strategy_json}
+```
+
+## 監視ポイント（簡易チェック）
+
+1. **利益目標到達**: TP近づいている？（残り5pips以内）
+2. **損失拡大**: 含み損が拡大している？（-20pips以上）
+3. **逆行シグナル**: トレンド反転の兆候？（RSI反転、MACD反転）
+4. **ボラティリティ**: 急激な価格変動？（ATRの2倍以上の動き）
+
+## 出力形式（JSON、簡潔に）
+
+```json
+{{
+  "action": "HOLD" | "CLOSE_NOW" | "ADJUST_SL" | "PARTIAL_CLOSE",
+  "urgency": "normal" | "high",
+  "reason": "判断理由（1文のみ）",
+  "details": {{
+    "profit_status": "on_target" | "extending" | "reversing" | "losing",
+    "risk_level": "low" | "medium" | "high",
+    "signals": ["観察されたシグナルのリスト（最大3個）"]
+  }},
+  "recommended_action": {{
+    "close_percent": 0 | 50 | 100,
+    "new_sl": null | 価格,
+    "reason": "アクション理由"
+  }}
+}}
+```
+
+## 判断基準（保守的）
+
+- **HOLD**: 正常範囲内、問題なし
+- **ADJUST_SL**: 利益確保のため、SLをエントリー価格またはそれ以上に引き上げ
+- **PARTIAL_CLOSE**: TP到達または逆行シグナル時、50%決済
+- **CLOSE_NOW**: 大きな含み損または強い逆行シグナル、100%決済
+
+**重要**:
+- 不確実な場合は「HOLD」
+- 明確な危険シグナルのみ反応
+- 過剰な決済を避ける
