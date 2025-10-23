@@ -59,17 +59,17 @@ class Config:
     # Gemini API
     # ========================================
     gemini_api_key: str
-    gemini_model_pro: str
-    gemini_model_flash: str
-    gemini_model_flash_8b: str
+    gemini_model_daily_analysis: str      # Phase 1, 2, 5用
+    gemini_model_periodic_update: str     # Phase 3用
+    gemini_model_position_monitor: str    # Phase 4用
 
     # AI分析パラメータ
-    ai_temperature_pro: float
-    ai_temperature_flash: float
-    ai_temperature_flash_8b: float
-    ai_max_tokens_pro: int
-    ai_max_tokens_flash: int
-    ai_max_tokens_flash_8b: int
+    ai_temperature_daily_analysis: float
+    ai_temperature_periodic_update: float
+    ai_temperature_position_monitor: float
+    ai_max_tokens_daily_analysis: int
+    ai_max_tokens_periodic_update: int
+    ai_max_tokens_position_monitor: int
 
     # ========================================
     # リスク管理
@@ -175,17 +175,17 @@ def load_config() -> Config:
 
         # Gemini API
         gemini_api_key=_get_env_str('GEMINI_API_KEY', ''),
-        gemini_model_pro=_get_env_str('GEMINI_MODEL_PRO', 'gemini-2.5-flash'),
-        gemini_model_flash=_get_env_str('GEMINI_MODEL_FLASH', 'gemini-2.5-flash'),
-        gemini_model_flash_8b=_get_env_str('GEMINI_MODEL_FLASH_8B', 'gemini-2.5-flash'),
+        gemini_model_daily_analysis=_get_env_str('GEMINI_MODEL_DAILY_ANALYSIS', 'gemini-2.5-flash'),
+        gemini_model_periodic_update=_get_env_str('GEMINI_MODEL_PERIODIC_UPDATE', 'gemini-2.5-flash'),
+        gemini_model_position_monitor=_get_env_str('GEMINI_MODEL_POSITION_MONITOR', 'gemini-2.5-flash'),
 
         # AI分析パラメータ
-        ai_temperature_pro=_get_env_float('AI_TEMPERATURE_PRO', 0.3),
-        ai_temperature_flash=_get_env_float('AI_TEMPERATURE_FLASH', 0.3),
-        ai_temperature_flash_8b=_get_env_float('AI_TEMPERATURE_FLASH_8B', 0.2),
-        ai_max_tokens_pro=_get_env_int('AI_MAX_TOKENS_PRO', 3000),
-        ai_max_tokens_flash=_get_env_int('AI_MAX_TOKENS_FLASH', 2000),
-        ai_max_tokens_flash_8b=_get_env_int('AI_MAX_TOKENS_FLASH_8B', 500),
+        ai_temperature_daily_analysis=_get_env_float('AI_TEMPERATURE_DAILY_ANALYSIS', 0.3),
+        ai_temperature_periodic_update=_get_env_float('AI_TEMPERATURE_PERIODIC_UPDATE', 0.3),
+        ai_temperature_position_monitor=_get_env_float('AI_TEMPERATURE_POSITION_MONITOR', 0.2),
+        ai_max_tokens_daily_analysis=_get_env_int('AI_MAX_TOKENS_DAILY_ANALYSIS', 3000),
+        ai_max_tokens_periodic_update=_get_env_int('AI_MAX_TOKENS_PERIODIC_UPDATE', 2000),
+        ai_max_tokens_position_monitor=_get_env_int('AI_MAX_TOKENS_POSITION_MONITOR', 500),
 
         # リスク管理
         position_size_default=_get_env_float('POSITION_SIZE_DEFAULT', 0.1),

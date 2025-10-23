@@ -19,9 +19,9 @@ Google Gemini APIと連携し、マーケットデータを分析してトレー
 
 【使用モデル】
 モデル名は.envファイルで設定可能:
-- GEMINI_MODEL_PRO: 高精度分析用（デフォルト: gemini-2.0-flash-exp）
-- GEMINI_MODEL_FLASH: バランス型（デフォルト: gemini-2.0-flash-exp）
-- GEMINI_MODEL_FLASH_8B: 高速軽量型（デフォルト: gemini-2.0-flash-thinking-exp-01-21）
+- GEMINI_MODEL_DAILY_ANALYSIS: デイリー分析用（Phase 1, 2, 5）（デフォルト: gemini-2.5-flash）
+- GEMINI_MODEL_PERIODIC_UPDATE: 定期更新用（Phase 3）（デフォルト: gemini-2.5-flash）
+- GEMINI_MODEL_POSITION_MONITOR: ポジション監視用（Phase 4）（デフォルト: gemini-2.5-flash）
 
 最新のモデル一覧: https://ai.google.dev/gemini-api/docs/models
 
@@ -77,24 +77,28 @@ class GeminiClient:
         self.logger = logging.getLogger(__name__)
 
         # デバッグ: 実際に読み込まれたモデル名を確認
-        self.logger.debug(f"Config loaded - PRO: {self.config.gemini_model_pro}, FLASH: {self.config.gemini_model_flash}, 8B: {self.config.gemini_model_flash_8b}")
+        self.logger.debug(
+            f"Config loaded - DAILY_ANALYSIS: {self.config.gemini_model_daily_analysis}, "
+            f"PERIODIC_UPDATE: {self.config.gemini_model_periodic_update}, "
+            f"POSITION_MONITOR: {self.config.gemini_model_position_monitor}"
+        )
 
         # モデルの初期化（.envの値を使用）
-        # Pro: 最高精度（Phase 1 & 2用）
-        self.model_pro = genai.GenerativeModel(self.config.gemini_model_pro)
+        # デイリー分析用（Phase 1, 2, 5）
+        self.model_daily_analysis = genai.GenerativeModel(self.config.gemini_model_daily_analysis)
 
-        # Flash: バランス型（Phase 3用）
-        self.model_flash = genai.GenerativeModel(self.config.gemini_model_flash)
+        # 定期更新用（Phase 3）
+        self.model_periodic_update = genai.GenerativeModel(self.config.gemini_model_periodic_update)
 
-        # Flash-8B: 高速軽量（Phase 4用）
-        self.model_flash_lite = genai.GenerativeModel(self.config.gemini_model_flash_8b)
+        # ポジション監視用（Phase 4）
+        self.model_position_monitor = genai.GenerativeModel(self.config.gemini_model_position_monitor)
 
         # ログとコンソール両方に出力
         init_message = (
             f"✓ Gemini API initialized:\n"
-            f"  Phase 1&2 (Pro):  {self.config.gemini_model_pro}\n"
-            f"  Phase 3 (Flash):  {self.config.gemini_model_flash}\n"
-            f"  Phase 4 (8B):     {self.config.gemini_model_flash_8b}"
+            f"  デイリー分析 (Phase 1,2,5): {self.config.gemini_model_daily_analysis}\n"
+            f"  定期更新 (Phase 3):         {self.config.gemini_model_periodic_update}\n"
+            f"  ポジション監視 (Phase 4):   {self.config.gemini_model_position_monitor}"
         )
         self.logger.info(init_message)
 
@@ -173,20 +177,20 @@ class GeminiClient:
 
         # パラメータのデフォルト値を設定から取得
         if temperature is None:
-            if model == 'pro':
-                temperature = self.config.ai_temperature_pro
-            elif model == 'flash-8b' or model == 'flash-lite':
-                temperature = self.config.ai_temperature_flash_8b
-            else:
-                temperature = self.config.ai_temperature_flash
+            if model == 'pro' or model == 'daily_analysis':
+                temperature = self.config.ai_temperature_daily_analysis
+            elif model == 'flash-8b' or model == 'flash-lite' or model == 'position_monitor':
+                temperature = self.config.ai_temperature_position_monitor
+            else:  # flash or periodic_update
+                temperature = self.config.ai_temperature_periodic_update
 
         if max_tokens is None:
-            if model == 'pro':
-                max_tokens = self.config.ai_max_tokens_pro
-            elif model == 'flash-8b' or model == 'flash-lite':
-                max_tokens = self.config.ai_max_tokens_flash_8b
-            else:
-                max_tokens = self.config.ai_max_tokens_flash
+            if model == 'pro' or model == 'daily_analysis':
+                max_tokens = self.config.ai_max_tokens_daily_analysis
+            elif model == 'flash-8b' or model == 'flash-lite' or model == 'position_monitor':
+                max_tokens = self.config.ai_max_tokens_position_monitor
+            else:  # flash or periodic_update
+                max_tokens = self.config.ai_max_tokens_periodic_update
 
         try:
             # 生成設定
@@ -309,22 +313,30 @@ class GeminiClient:
         使用するモデルを選択する
 
         Args:
-            model: モデル名 ('pro' / 'flash' / 'flash-lite')
+            model: モデル名
+                - 'pro' or 'daily_analysis': デイリー分析用 (Phase 1, 2, 5)
+                - 'flash' or 'periodic_update': 定期更新用 (Phase 3)
+                - 'flash-lite', 'flash-8b' or 'position_monitor': ポジション監視用 (Phase 4)
 
         Returns:
             選択されたGenerativeModelオブジェクト
         """
+        # 後方互換性のため、旧名称もサポート
         models = {
-            'pro': self.model_pro,
-            'flash': self.model_flash,
-            'flash-lite': self.model_flash_lite
+            'pro': self.model_daily_analysis,
+            'daily_analysis': self.model_daily_analysis,
+            'flash': self.model_periodic_update,
+            'periodic_update': self.model_periodic_update,
+            'flash-lite': self.model_position_monitor,
+            'flash-8b': self.model_position_monitor,
+            'position_monitor': self.model_position_monitor,
         }
 
-        selected = models.get(model, self.model_flash)
+        selected = models.get(model, self.model_periodic_update)
 
         if model not in models:
             self.logger.warning(
-                f"Unknown model '{model}', using 'flash' as default"
+                f"Unknown model '{model}', using 'periodic_update' as default"
             )
 
         return selected
@@ -397,7 +409,7 @@ class GeminiClient:
         Gemini APIへの接続テスト
 
         簡単なプロンプトを送信してAPIが正常に動作するか確認します。
-        .envで指定されたGEMINI_MODEL_PROを使用してテストします。
+        .envで指定されたGEMINI_MODEL_DAILY_ANALYSISを使用してテストします。
 
         Args:
             verbose: 詳細なログを出力するかどうか
@@ -408,11 +420,11 @@ class GeminiClient:
         try:
             if verbose:
                 print("🔌 Gemini API接続テスト中...", end='', flush=True)
-                print(f" (モデル: {self.config.gemini_model_pro})", end='', flush=True)
+                print(f" (モデル: {self.config.gemini_model_daily_analysis})", end='', flush=True)
 
             test_prompt = "Hello, this is a connection test. Please respond with 'OK'."
-            # .envで指定されたPROモデルを使用
-            response = self.model_pro.generate_content(test_prompt)
+            # .envで指定されたデイリー分析モデルを使用
+            response = self.model_daily_analysis.generate_content(test_prompt)
 
             if response.text:
                 if verbose:

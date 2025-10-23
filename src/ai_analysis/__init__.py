@@ -37,15 +37,17 @@ print(f"Reasoning: {result['reasoning']}")
 ```
 
 【サポートモデル】
-- pro: Gemini Pro（高精度、.envで設定可能）
-- flash: Gemini Flash（バランス型、.envで設定可能）
-- flash-lite: Gemini Flash-8B（高速軽量、.envで設定可能）
+- daily_analysis: デイリー分析用（Phase 1, 2, 5）
+- periodic_update: 定期更新用（Phase 3）
+- position_monitor: ポジション監視用（Phase 4）
+
+※後方互換性のため、旧名称（pro/flash/flash-lite/flash-8b）もサポート
 
 【モデル設定】
 .envファイルで以下の環境変数を設定してモデルを選択できます：
-- GEMINI_MODEL_PRO: Proモデル名（デフォルト: gemini-2.0-flash-exp）
-- GEMINI_MODEL_FLASH: Flashモデル名（デフォルト: gemini-2.0-flash-exp）
-- GEMINI_MODEL_FLASH_8B: Flash-8Bモデル名（デフォルト: gemini-2.0-flash-thinking-exp-01-21）
+- GEMINI_MODEL_DAILY_ANALYSIS: デイリー分析用（デフォルト: gemini-2.5-flash）
+- GEMINI_MODEL_PERIODIC_UPDATE: 定期更新用（デフォルト: gemini-2.5-flash）
+- GEMINI_MODEL_POSITION_MONITOR: ポジション監視用（デフォルト: gemini-2.5-flash）
 """
 
 from src.ai_analysis.gemini_client import GeminiClient
