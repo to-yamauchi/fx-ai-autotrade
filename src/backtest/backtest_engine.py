@@ -64,7 +64,8 @@ class BacktestEngine:
         ai_model: str = 'flash',
         sampling_interval_hours: int = 24,  # サンプリング間隔（時間）
         risk_percent: Optional[float] = None,
-        csv_path: Optional[str] = None  # CSVファイルパス（指定時はCSVを使用）
+        csv_path: Optional[str] = None,  # CSVファイルパス（指定時はCSVを使用）
+        skip_api_check: bool = False  # API接続チェックをスキップ（リセット専用時など）
     ):
         """
         バックテストエンジンの初期化
@@ -78,6 +79,7 @@ class BacktestEngine:
             sampling_interval_hours: AI分析のサンプリング間隔（時間）
             risk_percent: リスク許容率（%、Noneの場合は.envから取得）
             csv_path: CSVファイルパス（指定時はCSVからデータ読み込み、未指定時はMT5または.envから取得）
+            skip_api_check: API接続チェックをスキップ（リセット専用時など、デフォルト: False）
         """
         from src.utils.config import get_config
 
@@ -128,33 +130,37 @@ class BacktestEngine:
             'client_encoding': 'UTF8'
         }
 
-        # Gemini API接続チェック
-        try:
-            from src.ai_analysis import GeminiClient
-            self.gemini_client = GeminiClient()
+        # Gemini API接続チェック（skip_api_check=Trueの場合はスキップ）
+        if not skip_api_check:
+            try:
+                from src.ai_analysis import GeminiClient
+                self.gemini_client = GeminiClient()
 
-            # .envで指定されたモデルを使用して接続テスト
-            if not self.gemini_client.test_connection(verbose=True):
+                # .envで指定されたモデルを使用して接続テスト
+                if not self.gemini_client.test_connection(verbose=True):
+                    print("")
+                    print("Gemini APIへの接続に失敗しました。")
+                    print("以下を確認してください：")
+                    print("  1. .envファイルにGEMINI_API_KEYが設定されているか")
+                    print("  2. Geminiモデル名が正しいか")
+                    print("  3. インターネット接続が正常か")
+                    print("")
+                    raise ConnectionError("Gemini API connection failed")
+
+                # 使用するGeminiモデルを表示
                 print("")
-                print("Gemini APIへの接続に失敗しました。")
-                print("以下を確認してください：")
-                print("  1. .envファイルにGEMINI_API_KEYが設定されているか")
-                print("  2. Geminiモデル名が正しいか")
-                print("  3. インターネット接続が正常か")
-                print("")
-                raise ConnectionError("Gemini API connection failed")
+                print("🤖 使用AIモデル:")
+                print(f"   Phase 1&2 (デイリーレビュー・朝の分析): {self.gemini_client.config.gemini_model_pro}")
+                print(f"   Phase 3   (定期更新 12:00/16:00/21:30): {self.gemini_client.config.gemini_model_flash}")
+                print(f"   Phase 4   (Layer 3a監視 15分ごと):      {self.gemini_client.config.gemini_model_flash_8b}")
 
-            # 使用するGeminiモデルを表示
-            print("")
-            print("🤖 使用AIモデル:")
-            print(f"   Phase 1&2 (デイリーレビュー・朝の分析): {self.gemini_client.config.gemini_model_pro}")
-            print(f"   Phase 3   (定期更新 12:00/16:00/21:30): {self.gemini_client.config.gemini_model_flash}")
-            print(f"   Phase 4   (Layer 3a監視 15分ごと):      {self.gemini_client.config.gemini_model_flash_8b}")
-
-        except Exception as e:
-            if "ConnectionError" not in str(type(e).__name__):
-                print(f" ❌ エラー: {e}")
-            raise
+            except Exception as e:
+                if "ConnectionError" not in str(type(e).__name__):
+                    print(f" ❌ エラー: {e}")
+                raise
+        else:
+            # API接続スキップ時はGeminiClientを初期化しない
+            self.gemini_client = None
 
         self.logger.debug(
             f"BacktestEngine initialized: "
@@ -162,6 +168,109 @@ class BacktestEngine:
             f"model={ai_model}, "
             f"sampling={sampling_interval_hours}h"
         )
+
+    def reset_backtest_tables(self, confirm: bool = True) -> bool:
+        """
+        バックテスト用テーブルのデータをリセット（削除）
+
+        指定されたバックテスト期間のデータのみを削除します。
+        安全のため、デフォルトでは確認プロンプトを表示します。
+
+        Args:
+            confirm: 確認プロンプトを表示するか（デフォルト: True）
+
+        Returns:
+            成功時True、キャンセルまたは失敗時False
+        """
+        # 確認プロンプト
+        if confirm:
+            print("")
+            print("⚠️  バックテストデータのリセット")
+            print("=" * 60)
+            print(f"期間: {self.start_date.date()} ～ {self.end_date.date()}")
+            print(f"通貨ペア: {self.symbol}")
+            print("")
+            print("以下のテーブルから該当期間のデータを削除します：")
+            print("  - backtest_daily_strategies")
+            print("  - backtest_periodic_updates")
+            print("  - backtest_layer3a_monitoring")
+            print("  - backtest_layer3b_emergency")
+            print("  - backtest_results")
+            print("")
+            response = input("削除を実行しますか？ (yes/no): ").strip().lower()
+            if response not in ['yes', 'y']:
+                print("キャンセルされました。")
+                return False
+
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+
+            deleted_counts = {}
+
+            # 各テーブルから該当期間のデータを削除
+            tables = [
+                'backtest_daily_strategies',
+                'backtest_periodic_updates',
+                'backtest_layer3a_monitoring',
+                'backtest_layer3b_emergency',
+                'backtest_results'
+            ]
+
+            print("")
+            print("🗑️  データ削除中...")
+
+            for table in tables:
+                try:
+                    delete_query = f"""
+                        DELETE FROM {table}
+                        WHERE symbol = %s
+                        AND backtest_start_date = %s
+                        AND backtest_end_date = %s
+                    """
+                    cursor.execute(delete_query, (
+                        self.symbol,
+                        self.start_date.date(),
+                        self.end_date.date()
+                    ))
+                    deleted_counts[table] = cursor.rowcount
+                except Exception as e:
+                    # テーブルが存在しない、またはカラム構成が異なる場合
+                    self.logger.warning(f"Table {table} skip: {e}")
+                    deleted_counts[table] = 0
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            # 結果表示
+            print("")
+            print("✓ 削除完了")
+            print("-" * 60)
+            total_deleted = 0
+            for table, count in deleted_counts.items():
+                if count > 0:
+                    print(f"  {table:<35} {count:>5}件")
+                    total_deleted += count
+
+            if total_deleted == 0:
+                print("  削除対象のデータはありませんでした。")
+            else:
+                print("-" * 60)
+                print(f"  合計: {total_deleted}件")
+            print("")
+
+            self.logger.info(
+                f"Backtest tables reset: {self.symbol} "
+                f"{self.start_date.date()} to {self.end_date.date()}, "
+                f"deleted {total_deleted} records"
+            )
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to reset backtest tables: {e}")
+            print(f"❌ エラー: {e}")
+            return False
 
     def run(self) -> Dict:
         """
