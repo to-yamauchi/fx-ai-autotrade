@@ -37,9 +37,15 @@ print(f"Reasoning: {result['reasoning']}")
 ```
 
 【サポートモデル】
-- pro: gemini-1.5-pro（高精度、コスト高）
-- flash: gemini-2.0-flash-exp（Gemini 2.0、推奨）
-- flash-lite: gemini-1.5-flash（高速軽量）
+- pro: Gemini Pro（高精度、.envで設定可能）
+- flash: Gemini Flash（バランス型、.envで設定可能）
+- flash-lite: Gemini Flash-8B（高速軽量、.envで設定可能）
+
+【モデル設定】
+.envファイルで以下の環境変数を設定してモデルを選択できます：
+- GEMINI_MODEL_PRO: Proモデル名（デフォルト: gemini-2.0-flash-exp）
+- GEMINI_MODEL_FLASH: Flashモデル名（デフォルト: gemini-2.0-flash-exp）
+- GEMINI_MODEL_FLASH_8B: Flash-8Bモデル名（デフォルト: gemini-2.0-flash-thinking-exp-01-21）
 """
 
 from src.ai_analysis.gemini_client import GeminiClient

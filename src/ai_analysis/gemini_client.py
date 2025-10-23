@@ -18,9 +18,12 @@ Google Gemini APIと連携し、マーケットデータを分析してトレー
 4. エラーハンドリング
 
 【使用モデル】
-- gemini-1.5-pro: 高精度分析用（コスト高、速度遅）
-- gemini-2.0-flash-exp: Gemini 2.0 Flash（推奨）
-- gemini-1.5-flash: 高速軽量型（コスト低、速度速）
+モデル名は.envファイルで設定可能:
+- GEMINI_MODEL_PRO: 高精度分析用（デフォルト: gemini-2.0-flash-exp）
+- GEMINI_MODEL_FLASH: バランス型（デフォルト: gemini-2.0-flash-exp）
+- GEMINI_MODEL_FLASH_8B: 高速軽量型（デフォルト: gemini-2.0-flash-thinking-exp-01-21）
+
+最新のモデル一覧: https://ai.google.dev/gemini-api/docs/models
 
 【出力形式】
 {
@@ -55,7 +58,7 @@ class GeminiClient:
         """
         GeminiClientの初期化
 
-        環境変数からAPIキーを読み込み、3つのモデルを初期化します。
+        環境変数からAPIキーとモデル名を読み込み、3つのモデルを初期化します。
 
         Raises:
             ValueError: GEMINI_API_KEYが設定されていない場合
@@ -68,15 +71,23 @@ class GeminiClient:
         genai.configure(api_key=self.api_key)
         self.logger = logging.getLogger(__name__)
 
+        # モデル名を環境変数から取得（デフォルト値あり）
+        model_pro_name = os.getenv('GEMINI_MODEL_PRO', 'gemini-2.0-flash-exp')
+        model_flash_name = os.getenv('GEMINI_MODEL_FLASH', 'gemini-2.0-flash-exp')
+        model_flash_8b_name = os.getenv('GEMINI_MODEL_FLASH_8B', 'gemini-2.0-flash-thinking-exp-01-21')
+
         # モデルの初期化
         # Pro: 最高精度、コスト高、速度遅
-        self.model_pro = genai.GenerativeModel('gemini-1.5-pro')
+        self.model_pro = genai.GenerativeModel(model_pro_name)
+        self.logger.info(f"Initialized Pro model: {model_pro_name}")
 
         # Flash: Gemini 2.0 Flash（推奨モデル）
-        self.model_flash = genai.GenerativeModel('gemini-2.0-flash-exp')
+        self.model_flash = genai.GenerativeModel(model_flash_name)
+        self.logger.info(f"Initialized Flash model: {model_flash_name}")
 
         # Flash-8B: 高速軽量、コスト低、精度やや劣る
-        self.model_flash_lite = genai.GenerativeModel('gemini-1.5-flash')
+        self.model_flash_lite = genai.GenerativeModel(model_flash_8b_name)
+        self.logger.info(f"Initialized Flash-8B model: {model_flash_8b_name}")
 
         self.logger.info("GeminiClient initialized successfully")
 
