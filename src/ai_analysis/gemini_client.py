@@ -44,9 +44,10 @@ import os
 import logging
 import json
 import re
+from src.ai_analysis.base_llm_client import BaseLLMClient
 
 
-class GeminiClient:
+class GeminiClient(BaseLLMClient):
     """
     Gemini APIクライアントクラス
 
@@ -54,11 +55,12 @@ class GeminiClient:
     複数のモデルをサポートし、モデル選択により精度と速度のバランスを調整可能。
     """
 
-    def __init__(self):
+    def __init__(self, api_key: Optional[str] = None):
         """
         GeminiClientの初期化
 
-        環境変数からAPIキーとモデル名を読み込み、3つのモデルを初期化します。
+        Args:
+            api_key: Gemini APIキー（省略時は環境変数から取得）
 
         Raises:
             ValueError: GEMINI_API_KEYが設定されていない場合
@@ -67,14 +69,19 @@ class GeminiClient:
 
         # .envから設定を強制的に読み込み
         self.config = get_config()
-        self.api_key = self.config.gemini_api_key
 
-        if not self.api_key:
+        # APIキーの取得（引数優先、次に環境変数）
+        if api_key is None:
+            api_key = self.config.gemini_api_key
+
+        if not api_key:
             raise ValueError("GEMINI_API_KEY environment variable is not set")
 
+        # 基底クラスの初期化
+        super().__init__(api_key)
+
         # Gemini APIの設定
-        genai.configure(api_key=self.api_key)
-        self.logger = logging.getLogger(__name__)
+        genai.configure(api_key=api_key)
 
         # デバッグ: 実際に読み込まれたモデル名を確認
         self.logger.debug(
@@ -442,6 +449,15 @@ class GeminiClient:
                 print(f"   エラー: {e}")
             self.logger.error(f"Gemini API connection test failed: {e}")
             return False
+
+    def get_provider_name(self) -> str:
+        """
+        プロバイダー名を取得
+
+        Returns:
+            str: "gemini"
+        """
+        return "gemini"
 
 
 # モジュールのエクスポート

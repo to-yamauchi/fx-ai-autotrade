@@ -9,8 +9,10 @@ MetaTrader5>=5.0.45
 # データベース
 psycopg2-binary>=2.9.0
 
-# AI/機械学習
-google-generativeai>=0.3.0
+# AI/機械学習（マルチプロバイダー対応）
+google-generativeai>=0.3.0  # Google Gemini
+openai>=1.0.0               # OpenAI ChatGPT
+anthropic>=0.18.0           # Anthropic Claude
 
 # 環境変数管理
 python-dotenv>=1.0.0
