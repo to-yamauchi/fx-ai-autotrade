@@ -366,6 +366,7 @@ class GeminiClient:
         Gemini APIへの接続テスト
 
         簡単なプロンプトを送信してAPIが正常に動作するか確認します。
+        .envで指定されたGEMINI_MODEL_PROを使用してテストします。
 
         Args:
             verbose: 詳細なログを出力するかどうか
@@ -376,9 +377,11 @@ class GeminiClient:
         try:
             if verbose:
                 print("🔌 Gemini API接続テスト中...", end='', flush=True)
+                print(f" (モデル: {self.config.gemini_model_pro})", end='', flush=True)
 
             test_prompt = "Hello, this is a connection test. Please respond with 'OK'."
-            response = self.model_flash.generate_content(test_prompt)
+            # .envで指定されたPROモデルを使用
+            response = self.model_pro.generate_content(test_prompt)
 
             if response.text:
                 if verbose:
