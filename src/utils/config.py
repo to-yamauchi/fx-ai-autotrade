@@ -56,14 +56,27 @@ class Config:
     backtest_csv_path: Optional[str]
 
     # ========================================
-    # Gemini API
+    # LLM API Keys（マルチプロバイダー対応）
     # ========================================
     gemini_api_key: str
-    gemini_model_daily_analysis: str      # Phase 1, 2, 5用
-    gemini_model_periodic_update: str     # Phase 3用
-    gemini_model_position_monitor: str    # Phase 4用
+    openai_api_key: str
+    anthropic_api_key: str
 
-    # AI分析パラメータ
+    # ========================================
+    # LLM Model Settings（Phase別）
+    # ========================================
+    # 各Phaseで異なるプロバイダーのモデルを使用可能
+    # プロバイダーはモデル名から自動判定（gemini-*/gpt-*/claude-*）
+    model_daily_analysis: str             # Phase 1, 2, 5用
+    model_periodic_update: str            # Phase 3用
+    model_position_monitor: str           # Phase 4用
+
+    # 後方互換性のため保持（非推奨）
+    gemini_model_daily_analysis: Optional[str]
+    gemini_model_periodic_update: Optional[str]
+    gemini_model_position_monitor: Optional[str]
+
+    # AI分析パラメータ（プロバイダー共通）
     ai_temperature_daily_analysis: float
     ai_temperature_periodic_update: float
     ai_temperature_position_monitor: float
@@ -173,11 +186,20 @@ def load_config() -> Config:
         backtest_initial_balance=_get_env_float('BACKTEST_INITIAL_BALANCE', 1000000.0),
         backtest_csv_path=_get_env_str('BACKTEST_CSV_PATH', '') or None,
 
-        # Gemini API
+        # LLM API Keys
         gemini_api_key=_get_env_str('GEMINI_API_KEY', ''),
-        gemini_model_daily_analysis=_get_env_str('GEMINI_MODEL_DAILY_ANALYSIS', 'gemini-2.5-flash'),
-        gemini_model_periodic_update=_get_env_str('GEMINI_MODEL_PERIODIC_UPDATE', 'gemini-2.5-flash'),
-        gemini_model_position_monitor=_get_env_str('GEMINI_MODEL_POSITION_MONITOR', 'gemini-2.5-flash'),
+        openai_api_key=_get_env_str('OPENAI_API_KEY', ''),
+        anthropic_api_key=_get_env_str('ANTHROPIC_API_KEY', ''),
+
+        # LLM Models（新環境変数、後方互換性あり）
+        model_daily_analysis=_get_env_str('MODEL_DAILY_ANALYSIS', '') or _get_env_str('GEMINI_MODEL_DAILY_ANALYSIS', 'gemini-2.5-flash'),
+        model_periodic_update=_get_env_str('MODEL_PERIODIC_UPDATE', '') or _get_env_str('GEMINI_MODEL_PERIODIC_UPDATE', 'gemini-2.5-flash'),
+        model_position_monitor=_get_env_str('MODEL_POSITION_MONITOR', '') or _get_env_str('GEMINI_MODEL_POSITION_MONITOR', 'gemini-2.5-flash'),
+
+        # 後方互換性のため保持（非推奨）
+        gemini_model_daily_analysis=_get_env_str('GEMINI_MODEL_DAILY_ANALYSIS', None),
+        gemini_model_periodic_update=_get_env_str('GEMINI_MODEL_PERIODIC_UPDATE', None),
+        gemini_model_position_monitor=_get_env_str('GEMINI_MODEL_POSITION_MONITOR', None),
 
         # AI分析パラメータ
         ai_temperature_daily_analysis=_get_env_float('AI_TEMPERATURE_DAILY_ANALYSIS', 0.3),
