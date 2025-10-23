@@ -30,10 +30,11 @@ Created: 2025-10-23
 
 import pandas as pd
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 import logging
 import os
 import zipfile
+import re
 
 
 class CSVTickLoader:
@@ -85,8 +86,8 @@ class CSVTickLoader:
             # Single file
             df = self._load_csv_file(self.csv_path)
         elif os.path.isdir(self.csv_path):
-            # Directory - load all CSV files
-            df = self._load_csv_directory(self.csv_path)
+            # Directory - load CSV files (filter by date range if specified)
+            df = self._load_csv_directory(self.csv_path, start_date, end_date)
         else:
             raise FileNotFoundError(
                 f"CSV path not found: {self.csv_path}"
@@ -284,32 +285,126 @@ class CSVTickLoader:
 
             return df
 
-    def _load_csv_directory(self, dirpath: str) -> pd.DataFrame:
+    def _filter_files_by_date(
+        self,
+        files: List[str],
+        start_date: Optional[str],
+        end_date: Optional[str]
+    ) -> List[str]:
         """
-        Load all CSV/ZIP files from directory
+        Filter files by extracting year-month from filename
+
+        Supports filenames like:
+        - ticks_USDJPY-oj5k_2024-01.zip
+        - USDJPY_2024-09.csv
+        - data_2024-12.zip
+
+        Args:
+            files: List of filenames
+            start_date: Start date (YYYY-MM-DD format)
+            end_date: End date (YYYY-MM-DD format)
+
+        Returns:
+            List[str]: Filtered filenames
+        """
+        if not start_date and not end_date:
+            return files
+
+        # Parse start and end dates
+        start_dt = pd.to_datetime(start_date) if start_date else None
+        end_dt = pd.to_datetime(end_date) if end_date else None
+
+        # Extract year-month range needed
+        if start_dt and end_dt:
+            # Generate list of YYYY-MM strings in range
+            date_range = pd.date_range(
+                start=start_dt.replace(day=1),
+                end=end_dt.replace(day=1),
+                freq='MS'  # Month start
+            )
+            needed_months = set(dt.strftime('%Y-%m') for dt in date_range)
+
+            self.logger.info(
+                f"Date range {start_date} to {end_date} requires months: "
+                f"{sorted(needed_months)}"
+            )
+        else:
+            needed_months = None
+
+        # Filter files by year-month pattern
+        filtered_files = []
+        pattern = re.compile(r'(\d{4}-\d{2})')  # Match YYYY-MM
+
+        for filename in files:
+            match = pattern.search(filename)
+            if match:
+                file_year_month = match.group(1)
+
+                # Check if this file's month is in the needed range
+                if needed_months is None or file_year_month in needed_months:
+                    filtered_files.append(filename)
+                    self.logger.debug(
+                        f"Including file: {filename} (month: {file_year_month})"
+                    )
+                else:
+                    self.logger.debug(
+                        f"Skipping file: {filename} (month: {file_year_month} not in range)"
+                    )
+            else:
+                # No date pattern found in filename, include it anyway
+                filtered_files.append(filename)
+                self.logger.debug(
+                    f"Including file: {filename} (no date pattern found)"
+                )
+
+        return filtered_files
+
+    def _load_csv_directory(
+        self,
+        dirpath: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        Load CSV/ZIP files from directory, optionally filtered by date range
 
         Args:
             dirpath: Path to directory
+            start_date: Start date (YYYY-MM-DD format), optional
+            end_date: End date (YYYY-MM-DD format), optional
 
         Returns:
             pd.DataFrame: Combined tick data
         """
-        self.logger.info(f"Loading all CSV/ZIP files from: {dirpath}")
+        self.logger.info(f"Loading CSV/ZIP files from: {dirpath}")
 
         # Get both CSV and ZIP files
-        data_files = [
+        all_files = [
             f for f in os.listdir(dirpath)
             if f.endswith('.csv') or f.endswith('.zip')
         ]
 
-        if not data_files:
+        if not all_files:
             raise FileNotFoundError(
                 f"No CSV or ZIP files found in: {dirpath}"
             )
 
-        self.logger.info(f"Found {len(data_files)} data files")
+        # Filter files by date range if specified
+        data_files = self._filter_files_by_date(all_files, start_date, end_date)
 
-        # Load all files
+        if not data_files:
+            self.logger.warning(
+                f"No files found matching date range {start_date} to {end_date}. "
+                f"Loading all {len(all_files)} files."
+            )
+            data_files = all_files
+
+        self.logger.info(
+            f"Found {len(all_files)} total files, "
+            f"loading {len(data_files)} files for date range"
+        )
+
+        # Load filtered files
         dfs = []
         for data_file in sorted(data_files):
             filepath = os.path.join(dirpath, data_file)
