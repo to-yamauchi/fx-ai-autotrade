@@ -751,8 +751,9 @@ class BacktestEngine:
 
             # 現在のポジション状況を取得
             current_positions = []
-            for pos in self.simulator.open_positions:
+            for ticket, pos in self.simulator.open_positions.items():
                 current_positions.append({
+                    'ticket': ticket,
                     'direction': pos.get('action'),
                     'entry_price': pos.get('entry_price'),
                     'entry_time': pos.get('entry_time').isoformat() if pos.get('entry_time') else None,
@@ -898,9 +899,10 @@ class BacktestEngine:
             )
 
             # 各ポジションを監視
-            for position in self.simulator.open_positions:
+            for ticket, position in self.simulator.open_positions.items():
                 # ポジション情報を構築
                 position_info = {
+                    'ticket': ticket,
                     'direction': position.get('action'),
                     'entry_price': position.get('entry_price'),
                     'entry_time': position.get('entry_time').isoformat() if position.get('entry_time') else None,
@@ -929,7 +931,7 @@ class BacktestEngine:
                     self.logger.warning(
                         f"Layer 3a: CLOSE_NOW - {monitor_result.get('reason', 'No reason')}"
                     )
-                    self.simulator.close_position(position, reason=f"Layer3a: {monitor_result.get('reason')}")
+                    self.simulator.close_position(ticket, reason=f"Layer3a: {monitor_result.get('reason')}")
 
                 elif action == 'PARTIAL_CLOSE':
                     close_percent = monitor_result.get('recommended_action', {}).get('close_percent', 50)
@@ -938,7 +940,7 @@ class BacktestEngine:
                     )
                     # TODO: 部分決済の実装（現在は全決済として扱う）
                     if close_percent >= 100:
-                        self.simulator.close_position(position, reason=f"Layer3a partial: {monitor_result.get('reason')}")
+                        self.simulator.close_position(ticket, reason=f"Layer3a partial: {monitor_result.get('reason')}")
 
                 elif action == 'ADJUST_SL':
                     new_sl = monitor_result.get('recommended_action', {}).get('new_sl')
@@ -1044,8 +1046,9 @@ class BacktestEngine:
 
             # 現在のポジション一覧
             current_positions = []
-            for pos in self.simulator.open_positions:
+            for ticket, pos in self.simulator.open_positions.items():
                 current_positions.append({
+                    'ticket': ticket,
                     'direction': pos.get('action'),
                     'entry_price': pos.get('entry_price'),
                     'entry_time': pos.get('entry_time').isoformat() if pos.get('entry_time') else None,
