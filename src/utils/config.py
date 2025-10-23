@@ -28,8 +28,8 @@ from typing import Optional
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
-# 環境変数を読み込み
-load_dotenv()
+# 環境変数を読み込み（.envファイルの値を強制的に優先）
+load_dotenv(override=True)
 
 
 @dataclass
