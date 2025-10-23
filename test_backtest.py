@@ -46,11 +46,21 @@ def main():
 
     # テスト設定（短期間）
     symbol = 'USDJPY'
-    start_date = '2024-09-23'  # 1週間のテスト
-    end_date = '2024-09-30'
+    start_date = '2024-01-01'  # 1ヶ月のテスト
+    end_date = '2024-01-31'
     initial_balance = 100000.0
     ai_model = 'flash'
     sampling_interval_hours = 24  # 1日1回
+
+    # CSV/ZIPファイルパス（存在する場合）
+    # Option 1: 単一ZIPファイル
+    csv_path = 'data/tick_data/USDJPY/ticks_USDJPY-oj5k_2024-01.zip'
+
+    # Option 2: ディレクトリ（複数ファイル）
+    # csv_path = 'data/tick_data/USDJPY/'
+
+    # Option 3: MT5データ使用（csv_path=Noneにする）
+    # csv_path = None
 
     logger.info("テスト設定:")
     logger.info(f"  Symbol: {symbol}")
@@ -58,6 +68,7 @@ def main():
     logger.info(f"  Initial Balance: {initial_balance:,.0f} JPY")
     logger.info(f"  AI Model: {ai_model}")
     logger.info(f"  Sampling: {sampling_interval_hours} hours")
+    logger.info(f"  Data Source: {csv_path if csv_path else 'MT5'}")
     logger.info("")
 
     # バックテストエンジン初期化
@@ -69,7 +80,8 @@ def main():
         initial_balance=initial_balance,
         ai_model=ai_model,
         sampling_interval_hours=sampling_interval_hours,
-        risk_percent=1.0
+        risk_percent=1.0,
+        csv_path=csv_path  # CSVパス指定（Noneの場合はMT5使用）
     )
     logger.info("")
 

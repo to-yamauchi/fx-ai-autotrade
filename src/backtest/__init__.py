@@ -44,8 +44,10 @@ print(f"Return: {results['return_pct']:.2f}%")
 
 from src.backtest.trade_simulator import TradeSimulator
 from src.backtest.backtest_engine import BacktestEngine
+from src.backtest.csv_tick_loader import CSVTickLoader
 
 __all__ = [
     'TradeSimulator',
     'BacktestEngine',
+    'CSVTickLoader',
 ]
