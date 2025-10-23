@@ -251,17 +251,44 @@ class BacktestEngine:
                 morning_strategy=strategy_result
             )
 
-            # 市場価格を更新（既存ポジションのSL/TPチェック）
-            # 当日の全ティックをチェック
+            # === 市場価格を更新 + Layer 3監視 ===
+            # 当日の全ティックをチェック、15分ごとにLayer 3a監視実行
             next_date = current_date + timedelta(days=1)
+            last_monitor_time = None
+            monitor_interval = timedelta(minutes=15)
+
             for tick in tick_data:
                 tick_time = tick['time']
                 if current_date <= tick_time.date() < next_date:
+                    # 市場価格を更新
                     self.simulator.update_market_price(
                         bid=tick['bid'],
                         ask=tick['ask'],
                         timestamp=tick_time
                     )
+
+                    # === Phase 4: Layer 3a監視（15分ごと、ポジション保有時） ===
+                    if self.simulator.open_positions:
+                        if last_monitor_time is None or (tick_time - last_monitor_time) >= monitor_interval:
+                            self._run_layer3a_monitoring(
+                                tick_time=tick_time,
+                                current_price={'bid': tick['bid'], 'ask': tick['ask']},
+                                daily_strategy=strategy_result
+                            )
+                            last_monitor_time = tick_time
+
+                    # === Phase 5: Layer 3b緊急評価（異常検知時） ===
+                    anomaly = self._detect_anomaly(
+                        tick_time=tick_time,
+                        current_price={'bid': tick['bid'], 'ask': tick['ask']}
+                    )
+                    if anomaly:
+                        self._run_layer3b_emergency(
+                            anomaly_info=anomaly,
+                            tick_time=tick_time,
+                            current_price={'bid': tick['bid'], 'ask': tick['ask']},
+                            daily_strategy=strategy_result
+                        )
 
             # 進捗表示
             if day_count % 5 == 0:
@@ -836,6 +863,233 @@ class BacktestEngine:
                 self._execute_trade_from_strategy(updated_strategy, current_time)
 
         return updated_strategy
+
+    def _run_layer3a_monitoring(
+        self,
+        tick_time: datetime,
+        current_price: Dict,
+        daily_strategy: Optional[Dict] = None
+    ):
+        """
+        Layer 3a監視を実行（15分ごと、ポジション保有時）
+
+        Args:
+            tick_time: 現在時刻
+            current_price: 現在価格 {'bid': float, 'ask': float}
+            daily_strategy: 本日の戦略
+        """
+        try:
+            from src.ai_analysis.ai_analyzer import AIAnalyzer
+
+            if not self.simulator.open_positions:
+                return
+
+            analyzer = AIAnalyzer(
+                symbol=self.symbol,
+                model='flash-8b',  # Flash-8B使用
+                backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
+                backtest_end_date=self.end_date.strftime('%Y-%m-%d')
+            )
+
+            # 各ポジションを監視
+            for position in self.simulator.open_positions:
+                # ポジション情報を構築
+                position_info = {
+                    'direction': position.get('action'),
+                    'entry_price': position.get('entry_price'),
+                    'entry_time': position.get('entry_time').isoformat() if position.get('entry_time') else None,
+                    'current_price': current_price.get('bid') if position.get('action') == 'BUY' else current_price.get('ask'),
+                    'unrealized_pips': position.get('unrealized_pips', 0),
+                    'stop_loss': position.get('stop_loss'),
+                    'take_profit': position.get('take_profit')
+                }
+
+                # 簡易市場データ
+                current_market = {
+                    'price': current_price,
+                    'timestamp': tick_time.isoformat()
+                }
+
+                # Layer 3a監視実行
+                monitor_result = analyzer.layer3a_monitor(
+                    position=position_info,
+                    current_market_data=current_market,
+                    daily_strategy=daily_strategy or {}
+                )
+
+                action = monitor_result.get('action', 'HOLD')
+
+                if action == 'CLOSE_NOW':
+                    self.logger.warning(
+                        f"Layer 3a: CLOSE_NOW - {monitor_result.get('reason', 'No reason')}"
+                    )
+                    self.simulator.close_position(position, reason=f"Layer3a: {monitor_result.get('reason')}")
+
+                elif action == 'PARTIAL_CLOSE':
+                    close_percent = monitor_result.get('recommended_action', {}).get('close_percent', 50)
+                    self.logger.info(
+                        f"Layer 3a: PARTIAL_CLOSE {close_percent}% - {monitor_result.get('reason', 'No reason')}"
+                    )
+                    # TODO: 部分決済の実装（現在は全決済として扱う）
+                    if close_percent >= 100:
+                        self.simulator.close_position(position, reason=f"Layer3a partial: {monitor_result.get('reason')}")
+
+                elif action == 'ADJUST_SL':
+                    new_sl = monitor_result.get('recommended_action', {}).get('new_sl')
+                    if new_sl:
+                        self.logger.info(
+                            f"Layer 3a: ADJUST_SL to {new_sl} - {monitor_result.get('reason', 'No reason')}"
+                        )
+                        position['stop_loss'] = new_sl
+
+        except Exception as e:
+            self.logger.error(f"Layer 3a monitoring failed: {e}")
+
+    def _detect_anomaly(
+        self,
+        tick_time: datetime,
+        current_price: Dict
+    ) -> Optional[Dict]:
+        """
+        簡易的な異常検知（Layer 2の簡易版）
+
+        Args:
+            tick_time: 現在時刻
+            current_price: 現在価格 {'bid': float, 'ask': float}
+
+        Returns:
+            異常検知情報、異常がなければNone
+        """
+        try:
+            # 簡易的な異常検知ロジック
+            # 実際のLayer 2実装では、より高度な検知を行う
+
+            # 価格の急変動をチェック（前回の価格との比較）
+            if not hasattr(self, '_last_price') or not hasattr(self, '_last_check_time'):
+                self._last_price = current_price
+                self._last_check_time = tick_time
+                return None
+
+            time_diff = (tick_time - self._last_check_time).total_seconds()
+            if time_diff < 60:  # 1分未満はスキップ
+                return None
+
+            # 価格変動を計算（pips）
+            price_change = abs(current_price['bid'] - self._last_price['bid'])
+            price_change_pips = price_change * 100  # USDJPYの場合
+
+            # 急激な変動を検知（1分で5pips以上の変動）
+            if price_change_pips > 5:
+                anomaly = {
+                    'type': 'rapid_price_movement',
+                    'severity': 'high' if price_change_pips > 10 else 'medium',
+                    'details': {
+                        'price_change_pips': price_change_pips,
+                        'time_window': f'{time_diff:.0f}秒',
+                        'from_price': self._last_price['bid'],
+                        'to_price': current_price['bid']
+                    },
+                    'timestamp': tick_time.isoformat()
+                }
+
+                self._last_price = current_price
+                self._last_check_time = tick_time
+
+                return anomaly
+
+            self._last_price = current_price
+            self._last_check_time = tick_time
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Anomaly detection failed: {e}")
+            return None
+
+    def _run_layer3b_emergency(
+        self,
+        anomaly_info: Dict,
+        tick_time: datetime,
+        current_price: Dict,
+        daily_strategy: Optional[Dict] = None
+    ):
+        """
+        Layer 3b緊急評価を実行（異常検知時）
+
+        Args:
+            anomaly_info: 異常検知情報
+            tick_time: 現在時刻
+            current_price: 現在価格
+            daily_strategy: 本日の戦略
+        """
+        try:
+            from src.ai_analysis.ai_analyzer import AIAnalyzer
+
+            self.logger.warning(
+                f"ANOMALY DETECTED: {anomaly_info.get('type')} "
+                f"(severity: {anomaly_info.get('severity')})"
+            )
+
+            analyzer = AIAnalyzer(
+                symbol=self.symbol,
+                model='pro',  # 緊急時はGemini Pro使用
+                backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
+                backtest_end_date=self.end_date.strftime('%Y-%m-%d')
+            )
+
+            # 現在のポジション一覧
+            current_positions = []
+            for pos in self.simulator.open_positions:
+                current_positions.append({
+                    'direction': pos.get('action'),
+                    'entry_price': pos.get('entry_price'),
+                    'entry_time': pos.get('entry_time').isoformat() if pos.get('entry_time') else None,
+                    'unrealized_pips': pos.get('unrealized_pips', 0),
+                    'stop_loss': pos.get('stop_loss'),
+                    'take_profit': pos.get('take_profit')
+                })
+
+            # 簡易市場データ
+            current_market = {
+                'price': current_price,
+                'timestamp': tick_time.isoformat(),
+                'anomaly_detected': True
+            }
+
+            # Layer 3b緊急評価実行
+            emergency_result = analyzer.layer3b_emergency(
+                anomaly_info=anomaly_info,
+                current_positions=current_positions,
+                current_market_data=current_market,
+                daily_strategy=daily_strategy or {}
+            )
+
+            severity = emergency_result.get('severity', 'medium')
+            action = emergency_result.get('action', 'CONTINUE')
+
+            self.logger.warning(
+                f"Layer 3b: Severity={severity}, Action={action} - "
+                f"{emergency_result.get('reasoning', 'No reason')}"
+            )
+
+            # アクション実行
+            if action == 'CLOSE_ALL':
+                self.logger.warning("Layer 3b: Closing ALL positions!")
+                self.simulator.close_all_positions(reason=f"Layer3b emergency: {emergency_result.get('reasoning')}")
+
+            elif action == 'CLOSE_PARTIAL':
+                # 50%決済（簡易実装：最初のポジションをクローズ）
+                if self.simulator.open_positions:
+                    self.logger.warning("Layer 3b: Closing PARTIAL positions (50%)")
+                    positions_to_close = self.simulator.open_positions[:len(self.simulator.open_positions)//2 or 1]
+                    for pos in positions_to_close:
+                        self.simulator.close_position(pos, reason=f"Layer3b partial: {emergency_result.get('reasoning')}")
+
+        except Exception as e:
+            self.logger.error(f"Layer 3b emergency evaluation failed: {e}", exc_info=True)
+            # エラー時は安全のため全決済
+            if self.simulator.open_positions:
+                self.logger.error("Emergency: Closing all positions due to evaluation error")
+                self.simulator.close_all_positions(reason="Layer3b evaluation error - safety close")
 
     def _calculate_past_statistics(self, current_date: date, days: int = 5) -> Dict:
         """
