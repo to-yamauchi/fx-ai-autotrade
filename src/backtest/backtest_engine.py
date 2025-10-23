@@ -179,6 +179,7 @@ class BacktestEngine:
         end_date = self.end_date.date()
         day_count = 0
         review_result = None  # 前日の振り返り結果
+        strategy_result = None  # 本日の戦略
 
         while current_date <= end_date:
             self.logger.info("")
@@ -204,17 +205,32 @@ class BacktestEngine:
                 else:
                     self.logger.info("No trades on previous day, skipping review")
 
-            # === 1日分のAI分析とトレード実行 ===
-            # TODO: 本来は08:00に朝の詳細分析、12:00/16:00/21:30に定期更新
-            # 現在は簡易版として24時間ごとに1回実行
+            # === 08:00 朝の詳細分析（Gemini Pro） ===
+            self.logger.info("08:00 - Running morning detailed analysis...")
+            strategy_result = self._run_morning_analysis(
+                current_date=current_date,
+                review_result=review_result
+            )
+
+            if strategy_result:
+                self.logger.info(
+                    f"Morning analysis completed. "
+                    f"Bias: {strategy_result.get('daily_bias', 'N/A')}, "
+                    f"Confidence: {strategy_result.get('confidence', 0):.2f}, "
+                    f"Should trade: {strategy_result.get('entry_conditions', {}).get('should_trade', False)}"
+                )
+
+            # === 1日分のトレード実行 ===
+            # TODO: 本来は12:00/16:00/21:30に定期更新（Gemini Flash）を実施
+            # 現在は簡易版として朝の戦略に基づいてトレード判断
             current_time = datetime.combine(current_date, datetime.min.time())
 
-            self.logger.info(f"Running AI analysis for {current_date}...")
-            ai_result = self._analyze_at_time(current_time)
-
-            if ai_result and ai_result.get('action') != 'HOLD':
-                # トレード判断があった場合
-                self._execute_trade(ai_result, current_time)
+            # 朝の戦略に基づいてトレード判断
+            if strategy_result and strategy_result.get('entry_conditions', {}).get('should_trade', False):
+                # 戦略を基にトレード実行
+                self._execute_trade_from_strategy(strategy_result, current_time)
+            else:
+                self.logger.info("No trade signal from morning analysis (should_trade=False or NEUTRAL)")
 
             # 市場価格を更新（既存ポジションのSL/TPチェック）
             # 当日の全ティックをチェック
@@ -554,6 +570,175 @@ class BacktestEngine:
         except Exception as e:
             self.logger.error(f"Daily review failed: {e}")
             return None
+
+    def _run_morning_analysis(
+        self,
+        current_date: date,
+        review_result: Optional[Dict] = None
+    ) -> Optional[Dict]:
+        """
+        朝の詳細分析を実行（08:00、Gemini Pro）
+
+        Args:
+            current_date: 分析対象日
+            review_result: 前日の振り返り結果（06:00で取得）
+
+        Returns:
+            戦略結果、失敗時はNone
+        """
+        try:
+            from src.ai_analysis.ai_analyzer import AIAnalyzer
+
+            # AIAnalyzer初期化
+            analyzer = AIAnalyzer(
+                symbol=self.symbol,
+                model='pro',  # 朝の分析はGemini Pro使用
+                backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
+                backtest_end_date=self.end_date.strftime('%Y-%m-%d')
+            )
+
+            # 市場データを取得（標準化済みデータ）
+            market_analysis = analyzer.analyze_market()
+
+            # analyze_marketから標準化データを抽出するため、
+            # 一時的に直接データパイプラインを実行
+            # TODO: より効率的な方法に改善（データを2重取得している）
+            tick_data = analyzer._load_tick_data()
+            if not tick_data:
+                self.logger.error("Failed to load tick data for morning analysis")
+                return None
+
+            timeframe_data = analyzer._convert_timeframes(tick_data)
+            if not timeframe_data:
+                self.logger.error("Failed to convert timeframes for morning analysis")
+                return None
+
+            indicators = analyzer._calculate_indicators(timeframe_data)
+            if not indicators:
+                self.logger.error("Failed to calculate indicators for morning analysis")
+                return None
+
+            market_data = analyzer.data_standardizer.standardize_for_ai(
+                timeframe_data=timeframe_data,
+                indicators=indicators
+            )
+            market_data['symbol'] = self.symbol
+
+            # 過去5日の統計を計算
+            past_statistics = self._calculate_past_statistics(current_date, days=5)
+
+            # 朝の詳細分析を実行
+            strategy_result = analyzer.morning_analysis(
+                market_data=market_data,
+                review_result=review_result,
+                past_statistics=past_statistics
+            )
+
+            return strategy_result
+
+        except Exception as e:
+            self.logger.error(f"Morning analysis failed: {e}", exc_info=True)
+            return None
+
+    def _calculate_past_statistics(self, current_date: date, days: int = 5) -> Dict:
+        """
+        過去N日の統計を計算
+
+        Args:
+            current_date: 基準日
+            days: 過去何日分
+
+        Returns:
+            統計情報の辞書
+        """
+        try:
+            # 過去N日のトレードを収集
+            past_trades = []
+            for i in range(1, days + 1):
+                target_date = current_date - timedelta(days=i)
+                trades = self._get_trades_for_date(target_date)
+                past_trades.extend(trades)
+
+            if not past_trades:
+                return {
+                    'last_5_days': {
+                        'total_pips': 0,
+                        'win_rate': '0%',
+                        'avg_holding_time': '0分',
+                        'total_trades': 0
+                    }
+                }
+
+            # 統計計算
+            total_pips = sum(t.get('pips', 0) for t in past_trades)
+            win_count = sum(1 for t in past_trades if t.get('profit_loss', 0) > 0)
+            total_count = len(past_trades)
+            win_rate = f"{(win_count / total_count * 100):.1f}%" if total_count > 0 else "0%"
+
+            # 平均保有時間計算（分）
+            holding_times = []
+            for t in past_trades:
+                if t.get('entry_time') and t.get('exit_time'):
+                    from datetime import datetime
+                    entry = datetime.fromisoformat(t['entry_time'])
+                    exit_time = datetime.fromisoformat(t['exit_time'])
+                    holding_minutes = (exit_time - entry).total_seconds() / 60
+                    holding_times.append(holding_minutes)
+
+            avg_holding_time = sum(holding_times) / len(holding_times) if holding_times else 0
+
+            return {
+                'last_5_days': {
+                    'total_pips': total_pips,
+                    'win_rate': win_rate,
+                    'avg_holding_time': f'{avg_holding_time:.0f}分',
+                    'total_trades': total_count,
+                    'win_trades': win_count,
+                    'loss_trades': total_count - win_count
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"Failed to calculate past statistics: {e}")
+            return {'last_5_days': {}}
+
+    def _execute_trade_from_strategy(self, strategy: Dict, timestamp: datetime):
+        """
+        朝の戦略に基づいてトレードを実行
+
+        Args:
+            strategy: 朝の分析で生成された戦略
+            timestamp: 実行時刻
+        """
+        try:
+            entry_conditions = strategy.get('entry_conditions', {})
+
+            if not entry_conditions.get('should_trade', False):
+                return
+
+            # 戦略から必要な情報を抽出
+            direction = entry_conditions.get('direction', 'NEUTRAL')
+            if direction == 'NEUTRAL':
+                return
+
+            # エントリー条件をAI判断形式に変換
+            ai_result = {
+                'action': direction,  # BUY or SELL
+                'confidence': int(strategy.get('confidence', 0.5) * 100),  # 0.75 -> 75
+                'reasoning': strategy.get('reasoning', '朝の戦略に基づくエントリー'),
+                'symbol': self.symbol,
+                'timestamp': timestamp.isoformat(),
+                'model': 'pro',
+                'entry_conditions': entry_conditions,
+                'exit_strategy': strategy.get('exit_strategy', {}),
+                'risk_management': strategy.get('risk_management', {})
+            }
+
+            # 既存のトレード実行メソッドを利用
+            self._execute_trade(ai_result, timestamp)
+
+        except Exception as e:
+            self.logger.error(f"Failed to execute trade from strategy: {e}")
 
 
 # モジュールのエクスポート

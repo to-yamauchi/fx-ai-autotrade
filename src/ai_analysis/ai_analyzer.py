@@ -661,6 +661,231 @@ class AIAnalyzer:
             self.logger.error(f"Failed to save review to database: {e}")
             return False
 
+    def morning_analysis(
+        self,
+        market_data: Dict,
+        review_result: Optional[Dict] = None,
+        past_statistics: Optional[Dict] = None
+    ) -> Dict:
+        """
+        朝の詳細分析を実行（08:00、Gemini Pro）
+
+        Args:
+            market_data: 標準化された市場データ（from data_standardizer）
+            review_result: 前日の振り返り結果（from daily_review）
+            past_statistics: 過去5日の統計データ
+
+        Returns:
+            本日のトレード戦略の辞書
+            {
+                'daily_bias': 'BUY' | 'SELL' | 'NEUTRAL',
+                'confidence': 0.0-1.0,
+                'reasoning': '判断理由',
+                'market_environment': {...},
+                'entry_conditions': {...},
+                'exit_strategy': {...},
+                'risk_management': {...},
+                'key_levels': {...},
+                'scenario_planning': {...},
+                'lessons_applied': [...]
+            }
+        """
+        try:
+            self.logger.info("Starting morning detailed analysis...")
+
+            # デフォルト値の設定
+            if review_result is None:
+                review_result = {
+                    'lessons_for_today': ['前日データなし'],
+                    'pattern_recognition': {
+                        'success_patterns': [],
+                        'failure_patterns': []
+                    }
+                }
+            if past_statistics is None:
+                past_statistics = {
+                    'last_5_days': {
+                        'total_pips': 0,
+                        'win_rate': '0%',
+                        'avg_holding_time': '0分'
+                    }
+                }
+
+            # プロンプトテンプレートの読み込み
+            prompt_path = os.path.join(
+                os.path.dirname(__file__),
+                'prompts',
+                'morning_analysis.txt'
+            )
+
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                prompt_template = f.read()
+
+            # データを埋め込む
+            import json
+            prompt = prompt_template.format(
+                market_data_json=json.dumps(market_data, ensure_ascii=False, indent=2),
+                review_json=json.dumps(review_result, ensure_ascii=False, indent=2),
+                past_statistics_json=json.dumps(past_statistics, ensure_ascii=False, indent=2)
+            )
+
+            self.logger.info("Calling Gemini Pro for morning analysis...")
+
+            # Gemini Pro呼び出し（温度0.3で再現性確保）
+            response = self.gemini_client.generate_response(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=3000,
+                model='pro'  # Gemini 2.5 Pro
+            )
+
+            # JSONパース
+            import re
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = response
+
+            strategy_result = json.loads(json_str)
+
+            self.logger.info(
+                f"Morning analysis completed. Bias: {strategy_result.get('daily_bias', 'N/A')}, "
+                f"Confidence: {strategy_result.get('confidence', 0):.2f}"
+            )
+
+            # データベースに保存
+            self._save_morning_analysis_to_database(strategy_result, market_data)
+
+            return strategy_result
+
+        except Exception as e:
+            self.logger.error(f"Morning analysis failed: {e}", exc_info=True)
+            # フォールバック：保守的な戦略を返す
+            return {
+                'daily_bias': 'NEUTRAL',
+                'confidence': 0.0,
+                'reasoning': f'分析エラーにより保守的判断: {str(e)}',
+                'market_environment': {
+                    'trend': '不明',
+                    'strength': '不明',
+                    'phase': '不明'
+                },
+                'entry_conditions': {
+                    'should_trade': False,
+                    'direction': 'NEUTRAL',
+                    'price_zone': {'min': 0, 'max': 0},
+                    'required_signals': [],
+                    'avoid_if': ['分析エラーのため取引見送り']
+                },
+                'exit_strategy': {
+                    'take_profit': [],
+                    'stop_loss': {'initial': 'account_2_percent'},
+                    'indicator_exits': [],
+                    'time_exits': {}
+                },
+                'risk_management': {
+                    'position_size_multiplier': 0.0,
+                    'max_positions': 0,
+                    'reason': '分析エラーのため取引停止'
+                },
+                'key_levels': {},
+                'scenario_planning': {},
+                'lessons_applied': [],
+                'error': str(e)
+            }
+
+    def _save_morning_analysis_to_database(self, strategy_result: Dict, market_data: Dict) -> bool:
+        """
+        朝の分析結果（戦略）をデータベースに保存
+
+        Args:
+            strategy_result: 戦略結果
+            market_data: 市場データ
+
+        Returns:
+            成功時True
+        """
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+
+            # テーブル名取得（モード別）
+            table_name = self.table_names.get('strategies', 'backtest_daily_strategies')
+
+            # バックテストモードの場合は追加カラムを含める
+            if self.mode_config.is_backtest():
+                if not self.backtest_start_date or not self.backtest_end_date:
+                    self.logger.warning(
+                        "Backtest mode but backtest dates not provided. Skipping database save."
+                    )
+                    return False
+
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (strategy_date, symbol, daily_bias, confidence, reasoning,
+                     market_environment, entry_conditions, exit_strategy, risk_management,
+                     key_levels, scenario_planning, lessons_applied, market_data,
+                     backtest_start_date, backtest_end_date, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now().date(),
+                    self.symbol,
+                    strategy_result.get('daily_bias', 'NEUTRAL'),
+                    strategy_result.get('confidence', 0.0),
+                    strategy_result.get('reasoning', ''),
+                    Json(strategy_result.get('market_environment', {})),
+                    Json(strategy_result.get('entry_conditions', {})),
+                    Json(strategy_result.get('exit_strategy', {})),
+                    Json(strategy_result.get('risk_management', {})),
+                    Json(strategy_result.get('key_levels', {})),
+                    Json(strategy_result.get('scenario_planning', {})),
+                    Json(strategy_result.get('lessons_applied', [])),
+                    Json(market_data),
+                    self.backtest_start_date,
+                    self.backtest_end_date,
+                    datetime.now()
+                ))
+            else:
+                # DEMOモード/本番モード
+                insert_query = f"""
+                    INSERT INTO {table_name}
+                    (strategy_date, symbol, daily_bias, confidence, reasoning,
+                     market_environment, entry_conditions, exit_strategy, risk_management,
+                     key_levels, scenario_planning, lessons_applied, market_data, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cursor.execute(insert_query, (
+                    datetime.now().date(),
+                    self.symbol,
+                    strategy_result.get('daily_bias', 'NEUTRAL'),
+                    strategy_result.get('confidence', 0.0),
+                    strategy_result.get('reasoning', ''),
+                    Json(strategy_result.get('market_environment', {})),
+                    Json(strategy_result.get('entry_conditions', {})),
+                    Json(strategy_result.get('exit_strategy', {})),
+                    Json(strategy_result.get('risk_management', {})),
+                    Json(strategy_result.get('key_levels', {})),
+                    Json(strategy_result.get('scenario_planning', {})),
+                    Json(strategy_result.get('lessons_applied', [])),
+                    Json(market_data),
+                    datetime.now()
+                ))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            self.logger.info(f"Morning analysis saved to database ({table_name})")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to save morning analysis to database: {e}")
+            return False
+
 
 # モジュールのエクスポート
 __all__ = ['AIAnalyzer']

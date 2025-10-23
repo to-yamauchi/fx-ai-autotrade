@@ -95,21 +95,29 @@ class TradeModeConfig:
             Dict[str, str]: テーブル名のマッピング
                 {
                     'ai_judgments': テーブル名,
-                    'positions': テーブル名
+                    'positions': テーブル名,
+                    'reviews': テーブル名,
+                    'strategies': テーブル名
                 }
         """
         table_mapping = {
             TradeMode.BACKTEST: {
                 'ai_judgments': 'backtest_ai_judgments',
-                'positions': 'backtest_positions'
+                'positions': 'backtest_positions',
+                'reviews': 'backtest_daily_reviews',
+                'strategies': 'backtest_daily_strategies'
             },
             TradeMode.DEMO: {
                 'ai_judgments': 'demo_ai_judgments',
-                'positions': 'demo_positions'
+                'positions': 'demo_positions',
+                'reviews': 'demo_daily_reviews',
+                'strategies': 'demo_daily_strategies'
             },
             TradeMode.LIVE: {
                 'ai_judgments': 'ai_judgments',
-                'positions': 'positions'
+                'positions': 'positions',
+                'reviews': 'daily_reviews',
+                'strategies': 'daily_strategies'
             }
         }
 
