@@ -46,6 +46,8 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import logging
 import os
+import psycopg2
+from psycopg2.extras import execute_batch
 
 
 class TickDataLoader:
@@ -63,18 +65,21 @@ class TickDataLoader:
         load_from_zip: zipファイルからティックデータを読み込む
     """
 
-    def __init__(self, data_dir: str = "data/tick_data"):
+    def __init__(self, data_dir: str = "data/tick_data", use_cache: bool = True):
         """
         TickDataLoaderの初期化
 
         Args:
             data_dir (str): ティックデータが格納されているディレクトリパス
                           デフォルトは "data/tick_data"
+            use_cache (bool): データベースキャッシュを使用するかどうか
+                            デフォルトはTrue
 
         Raises:
             なし（ディレクトリの存在チェックは読み込み時に実施）
         """
         self.data_dir = data_dir
+        self.use_cache = use_cache
         self.logger = logging.getLogger(__name__)
 
         # ログレベルの設定
@@ -86,6 +91,164 @@ class TickDataLoader:
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
             self.logger.setLevel(logging.INFO)
+
+    def _get_db_connection(self):
+        """
+        データベース接続を取得
+
+        Returns:
+            psycopg2.connection: データベース接続オブジェクト
+
+        Raises:
+            Exception: データベース接続エラー
+        """
+        try:
+            conn = psycopg2.connect(
+                host=os.getenv('DB_HOST', 'localhost'),
+                port=int(os.getenv('DB_PORT', 5432)),
+                database=os.getenv('DB_NAME', 'fx_autotrade'),
+                user=os.getenv('DB_USER', 'postgres'),
+                password=os.getenv('DB_PASSWORD', ''),
+                connect_timeout=5
+            )
+            return conn
+        except Exception as e:
+            self.logger.error(f"データベース接続エラー: {e}")
+            raise
+
+    def _check_cache_exists(self, symbol: str, date: datetime.date) -> bool:
+        """
+        指定された日付のキャッシュが存在するかチェック
+
+        Args:
+            symbol (str): 通貨ペア
+            date (datetime.date): チェックする日付
+
+        Returns:
+            bool: キャッシュが存在すればTrue、なければFalse
+        """
+        if not self.use_cache:
+            return False
+
+        try:
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                "SELECT COUNT(*) FROM tick_data_cache WHERE symbol = %s AND date = %s",
+                (symbol, date)
+            )
+            count = cursor.fetchone()[0]
+
+            cursor.close()
+            conn.close()
+
+            return count > 0
+
+        except Exception as e:
+            self.logger.warning(f"キャッシュ存在チェックエラー: {e}")
+            return False
+
+    def _load_from_cache(self, symbol: str, date: datetime.date) -> List[Dict]:
+        """
+        データベースキャッシュからティックデータを読み込む
+
+        Args:
+            symbol (str): 通貨ペア
+            date (datetime.date): 読み込む日付
+
+        Returns:
+            List[Dict]: ティックデータのリスト
+        """
+        try:
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT timestamp, bid, ask, 0 as volume
+                FROM tick_data_cache
+                WHERE symbol = %s AND date = %s
+                ORDER BY timestamp
+                """,
+                (symbol, date)
+            )
+
+            tick_data = []
+            for row in cursor.fetchall():
+                tick = {
+                    'timestamp': row[0],
+                    'bid': float(row[1]),
+                    'ask': float(row[2]),
+                    'volume': row[3]
+                }
+                tick_data.append(tick)
+
+            cursor.close()
+            conn.close()
+
+            self.logger.debug(
+                f"キャッシュから読み込み完了: {len(tick_data)} 件 ({symbol} {date})"
+            )
+
+            return tick_data
+
+        except Exception as e:
+            self.logger.error(f"キャッシュ読み込みエラー: {e}")
+            raise
+
+    def _save_to_cache(self, symbol: str, date: datetime.date, tick_data: List[Dict]):
+        """
+        ティックデータをデータベースキャッシュに保存
+
+        Args:
+            symbol (str): 通貨ペア
+            date (datetime.date): データの日付
+            tick_data (List[Dict]): 保存するティックデータ
+        """
+        if not self.use_cache or not tick_data:
+            return
+
+        try:
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+
+            # 既存データを削除（上書き）
+            cursor.execute(
+                "DELETE FROM tick_data_cache WHERE symbol = %s AND date = %s",
+                (symbol, date)
+            )
+
+            # 新しいデータを挿入
+            insert_query = """
+                INSERT INTO tick_data_cache (symbol, date, timestamp, bid, ask)
+                VALUES (%s, %s, %s, %s, %s)
+            """
+
+            batch_data = [
+                (
+                    symbol,
+                    date,
+                    tick['timestamp'],
+                    tick['bid'],
+                    tick['ask']
+                )
+                for tick in tick_data
+            ]
+
+            execute_batch(cursor, insert_query, batch_data, page_size=1000)
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            self.logger.debug(
+                f"キャッシュに保存完了: {len(tick_data)} 件 ({symbol} {date})"
+            )
+
+        except Exception as e:
+            self.logger.warning(f"キャッシュ保存エラー: {e}")
+            # キャッシュ保存失敗は致命的ではないので続行
 
     def load_from_zip(
         self,
@@ -276,6 +439,7 @@ class TickDataLoader:
 
         指定された期間に含まれる複数月のzipファイルを読み込み、
         結合したティックデータを返します。
+        データベースキャッシュが有効な場合は、日付単位でキャッシュを使用します。
 
         Args:
             symbol (str): 通貨ペア（例: "USDJPY"）
@@ -320,21 +484,91 @@ class TickDataLoader:
 
         self.logger.debug(f"読み込み対象: {len(months_to_load)}ヶ月分のデータ")
 
-        # 各月のデータを読み込んで結合
+        # 日付リストの生成
+        from datetime import timedelta
+        all_dates = []
+        current = start_date.date()
+        end = end_date.date()
+        while current <= end:
+            all_dates.append(current)
+            current += timedelta(days=1)
+
+        # 各日のデータを読み込む（キャッシュ優先）
         all_tick_data = []
         missing_files = []
+        cache_hits = 0
+        cache_misses = 0
+        months_loaded = set()  # 既に読み込んだ月を追跡
 
-        for year, month in months_to_load:
+        for target_date in all_dates:
+            # キャッシュが存在するかチェック
+            if self.use_cache and self._check_cache_exists(symbol, target_date):
+                # キャッシュから読み込み
+                try:
+                    date_tick_data = self._load_from_cache(symbol, target_date)
+                    all_tick_data.extend(date_tick_data)
+                    cache_hits += 1
+                    continue
+                except Exception as e:
+                    # キャッシュ読み込み失敗時はZIPから読み込む
+                    self.logger.warning(
+                        f"キャッシュ読み込み失敗、ZIPから読み込みます: {e}"
+                    )
+
+            # キャッシュがない場合、その月のZIPファイルを読み込む
+            cache_misses += 1
+            year = target_date.year
+            month = target_date.month
+            month_key = (year, month)
+
+            # 既にこの月のZIPを読み込み済みならスキップ
+            if month_key in months_loaded:
+                continue
+
             try:
-                tick_data = self.load_from_zip(symbol, year, month)
-                all_tick_data.extend(tick_data)
+                # 月のzipファイルを読み込む
+                month_tick_data = self.load_from_zip(symbol, year, month)
+                months_loaded.add(month_key)
+
+                # 日付別にグループ化してキャッシュに保存
+                if self.use_cache and month_tick_data:
+                    # 日付ごとにグループ化
+                    by_date = {}
+                    for tick in month_tick_data:
+                        tick_date = tick['timestamp'].date()
+                        if tick_date not in by_date:
+                            by_date[tick_date] = []
+                        by_date[tick_date].append(tick)
+
+                    # 日付ごとにキャッシュに保存
+                    for tick_date, date_ticks in by_date.items():
+                        if not self._check_cache_exists(symbol, tick_date):
+                            self._save_to_cache(symbol, tick_date, date_ticks)
+
+                    # この日のデータをall_tick_dataに追加
+                    if target_date in by_date:
+                        all_tick_data.extend(by_date[target_date])
+                else:
+                    # キャッシュ無効時は全データを追加
+                    all_tick_data.extend(month_tick_data)
+
             except FileNotFoundError:
                 # ファイルが見つからない場合は記録して続行
-                missing_files.append(f"{year}-{month:02d}")
-                self.logger.warning(
-                    f"ファイルが見つかりません: {symbol} {year}-{month:02d} (スキップ)"
-                )
+                if f"{year}-{month:02d}" not in missing_files:
+                    missing_files.append(f"{year}-{month:02d}")
+                    self.logger.warning(
+                        f"ファイルが見つかりません: {symbol} {year}-{month:02d} (スキップ)"
+                    )
                 continue
+
+        # キャッシュ使用状況をログ出力
+        if self.use_cache:
+            total_days = len(all_dates)
+            self.logger.info(
+                f"キャッシュ使用状況: ヒット {cache_hits}/{total_days}日 "
+                f"({cache_hits/total_days*100:.1f}%), "
+                f"ミス {cache_misses}日, ZIPロード {len(months_loaded)}ヶ月"
+            )
 
         # 一部のファイルが見つからなかった場合は警告
         if missing_files:
@@ -349,19 +583,15 @@ class TickDataLoader:
                 f"{symbol} {start_date.date()} ～ {end_date.date()}"
             )
 
-        # 指定期間内のデータのみをフィルタリング
-        filtered_data = [
-            tick for tick in all_tick_data
-            if start_date <= tick['timestamp'] <= end_date
-        ]
+        # タイムスタンプでソート（キャッシュから読み込んだデータが順不同の可能性があるため）
+        all_tick_data.sort(key=lambda x: x['timestamp'])
 
-        self.logger.debug(
-            f"期間指定データ読み込み完了: {len(filtered_data):,} 件 "
-            f"({len(months_to_load)}ヶ月分, "
-            f"フィルタ前: {len(all_tick_data):,} 件)"
+        self.logger.info(
+            f"期間指定データ読み込み完了: {len(all_tick_data):,} 件 "
+            f"({symbol} {start_date.date()} ～ {end_date.date()})"
         )
 
-        return filtered_data
+        return all_tick_data
 
 
 # モジュールテスト用のメイン関数
