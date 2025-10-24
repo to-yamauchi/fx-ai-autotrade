@@ -38,7 +38,8 @@ response = client.generate_response(
 
 from typing import Optional
 import logging
-from openai import OpenAI
+import time
+from openai import OpenAI, InternalServerError, RateLimitError
 from src.ai_analysis.base_llm_client import BaseLLMClient
 
 
@@ -177,8 +178,27 @@ class OpenAIClient(BaseLLMClient):
                 f"temperature={temperature}, max_tokens={max_tokens}"
             )
 
-            # API呼び出し
-            response = self.client.chat.completions.create(**params)
+            # API呼び出し（リトライ処理付き）
+            max_retries = 3
+            retry_delay = 2  # 初回待機時間（秒）
+
+            for attempt in range(max_retries):
+                try:
+                    response = self.client.chat.completions.create(**params)
+                    break  # 成功したらループを抜ける
+
+                except (InternalServerError, RateLimitError) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)  # 指数バックオフ: 2秒、4秒、8秒
+                        self.logger.warning(
+                            f"OpenAI API error (attempt {attempt + 1}/{max_retries}): {e}. "
+                            f"Retrying in {wait_time} seconds..."
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        # 最後のリトライも失敗
+                        self.logger.error(f"OpenAI API failed after {max_retries} attempts: {e}")
+                        raise
 
             # レスポンスからテキストを取得
             if not response.choices:

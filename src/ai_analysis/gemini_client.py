@@ -185,11 +185,30 @@ class GeminiClient(BaseLLMClient):
             if max_tokens is not None:
                 generation_config['max_output_tokens'] = max_tokens
 
-            # AI応答の生成
-            response = selected_model.generate_content(
-                prompt,
-                generation_config=generation_config
-            )
+            # AI応答の生成（リトライ処理付き）
+            max_retries = 3
+            retry_delay = 2  # 初回待機時間（秒）
+
+            for attempt in range(max_retries):
+                try:
+                    response = selected_model.generate_content(
+                        prompt,
+                        generation_config=generation_config
+                    )
+                    break  # 成功したらループを抜ける
+
+                except (google_exceptions.InternalServerError, google_exceptions.ResourceExhausted) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)  # 指数バックオフ: 2秒、4秒、8秒
+                        self.logger.warning(
+                            f"Gemini API error (attempt {attempt + 1}/{max_retries}): {e}. "
+                            f"Retrying in {wait_time} seconds..."
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        # 最後のリトライも失敗
+                        self.logger.error(f"Gemini API failed after {max_retries} attempts: {e}")
+                        raise
 
             # finish_reasonをチェック
             if not response.parts:
