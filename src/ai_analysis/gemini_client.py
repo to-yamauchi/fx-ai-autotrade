@@ -313,33 +313,36 @@ class GeminiClient(BaseLLMClient):
         使用するモデルを選択する
 
         Args:
-            model: モデル名
-                - 'pro' or 'daily_analysis': デイリー分析用 (Phase 1, 2, 5)
-                - 'flash' or 'periodic_update': 定期更新用 (Phase 3)
-                - 'flash-lite', 'flash-8b' or 'position_monitor': ポジション監視用 (Phase 4)
+            model: モデル名（完全なモデル名 例: gemini-2.5-flash）
+                または短縮名（後方互換性のため）:
+                - 'pro' or 'daily_analysis': gemini-2.5-pro相当
+                - 'flash' or 'periodic_update': gemini-2.5-flash相当
+                - 'flash-lite', 'flash-8b' or 'position_monitor': gemini-2.5-flash相当
 
         Returns:
             選択されたGenerativeModelオブジェクト
         """
-        # 後方互換性のため、旧名称もサポート
-        models = {
-            'pro': self.model_daily_analysis,
-            'daily_analysis': self.model_daily_analysis,
-            'flash': self.model_periodic_update,
-            'periodic_update': self.model_periodic_update,
-            'flash-lite': self.model_position_monitor,
-            'flash-8b': self.model_position_monitor,
-            'position_monitor': self.model_position_monitor,
+        # 短縮名から完全なモデル名へのマッピング（後方互換性）
+        model_name_mapping = {
+            'pro': 'gemini-2.5-pro',
+            'daily_analysis': 'gemini-2.5-pro',
+            'flash': 'gemini-2.5-flash',
+            'periodic_update': 'gemini-2.5-flash',
+            'flash-lite': 'gemini-2.5-flash',
+            'flash-8b': 'gemini-2.5-flash',
+            'position_monitor': 'gemini-2.5-flash',
         }
 
-        selected = models.get(model, self.model_periodic_update)
+        # 短縮名の場合は完全なモデル名に変換
+        if model in model_name_mapping:
+            model_name = model_name_mapping[model]
+            self.logger.debug(f"Model shorthand '{model}' mapped to '{model_name}'")
+        else:
+            # すでに完全なモデル名（例: gemini-2.5-flash, claude-sonnet-4-5など）
+            model_name = model
 
-        if model not in models:
-            self.logger.warning(
-                f"Unknown model '{model}', using 'periodic_update' as default"
-            )
-
-        return selected
+        # GenerativeModelオブジェクトを生成
+        return genai.GenerativeModel(model_name)
 
     def _parse_response(self, response_text: str) -> Dict:
         """
