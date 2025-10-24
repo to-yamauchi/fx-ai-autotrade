@@ -83,31 +83,7 @@ class GeminiClient(BaseLLMClient):
         # Gemini APIの設定
         genai.configure(api_key=api_key)
 
-        # デバッグ: 実際に読み込まれたモデル名を確認
-        self.logger.debug(
-            f"Config loaded - DAILY_ANALYSIS: {self.config.gemini_model_daily_analysis}, "
-            f"PERIODIC_UPDATE: {self.config.gemini_model_periodic_update}, "
-            f"POSITION_MONITOR: {self.config.gemini_model_position_monitor}"
-        )
-
-        # モデルの初期化（.envの値を使用）
-        # デイリー分析用（Phase 1, 2, 5）
-        self.model_daily_analysis = genai.GenerativeModel(self.config.gemini_model_daily_analysis)
-
-        # 定期更新用（Phase 3）
-        self.model_periodic_update = genai.GenerativeModel(self.config.gemini_model_periodic_update)
-
-        # ポジション監視用（Phase 4）
-        self.model_position_monitor = genai.GenerativeModel(self.config.gemini_model_position_monitor)
-
-        # ログとコンソール両方に出力
-        init_message = (
-            f"✓ Gemini API initialized:\n"
-            f"  デイリー分析 (Phase 1,2,5): {self.config.gemini_model_daily_analysis}\n"
-            f"  定期更新 (Phase 3):         {self.config.gemini_model_periodic_update}\n"
-            f"  ポジション監視 (Phase 4):   {self.config.gemini_model_position_monitor}"
-        )
-        self.logger.info(init_message)
+        self.logger.info("✓ Gemini API initialized")
 
     def analyze_market(self,
                       market_data: Dict,
@@ -418,7 +394,7 @@ class GeminiClient(BaseLLMClient):
         Gemini APIへの接続テスト
 
         簡単なプロンプトを送信してAPIが正常に動作するか確認します。
-        .envで指定されたGEMINI_MODEL_DAILY_ANALYSISを使用してテストします。
+        軽量なテストモデル（gemini-2.0-flash-lite）を使用してテストします。
 
         Args:
             verbose: 詳細なログを出力するかどうか
@@ -429,11 +405,11 @@ class GeminiClient(BaseLLMClient):
         try:
             if verbose:
                 print("🔌 Gemini API接続テスト中...", end='', flush=True)
-                print(f" (モデル: {self.config.gemini_model_daily_analysis})", end='', flush=True)
 
             test_prompt = "Hello, this is a connection test. Please respond with 'OK'."
-            # .envで指定されたデイリー分析モデルを使用
-            response = self.model_daily_analysis.generate_content(test_prompt)
+            # 軽量なテストモデルを使用
+            test_model = genai.GenerativeModel('gemini-2.0-flash-lite')
+            response = test_model.generate_content(test_prompt)
 
             if response.text:
                 if verbose:
