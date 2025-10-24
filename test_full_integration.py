@@ -193,7 +193,8 @@ def main():
             print(f"{label}: {model}")
             print(f"  Provider: {provider.upper()}", end=' ')
 
-            if not client.test_connection(verbose=False):
+            # 実際の.envモデルでテスト
+            if not client.test_connection(verbose=False, model=model):
                 print(" ❌ 接続失敗")
                 all_connected = False
             else:

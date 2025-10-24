@@ -462,15 +462,15 @@ class GeminiClient(BaseLLMClient):
                 'reasoning': f'Failed to parse AI response: {str(e)}'
             }
 
-    def test_connection(self, verbose: bool = False) -> bool:
+    def test_connection(self, verbose: bool = False, model: Optional[str] = None) -> bool:
         """
         Gemini APIへの接続テスト
 
         簡単なプロンプトを送信してAPIが正常に動作するか確認します。
-        軽量なテストモデル（gemini-2.0-flash-lite）を使用してテストします。
 
         Args:
             verbose: 詳細なログを出力するかどうか
+            model: テストに使用するモデル名（Noneの場合はデフォルトモデル）
 
         Returns:
             True: 接続成功, False: 接続失敗
@@ -479,11 +479,14 @@ class GeminiClient(BaseLLMClient):
             if verbose:
                 print("🔌 Gemini API接続テスト中...", end='', flush=True)
 
+            # モデルが指定されていない場合はデフォルト（最も軽量で高速）を使用
+            test_model = model if model else 'gemini-2.0-flash-lite'
+
             test_prompt = "Hello, this is a connection test. Please respond with 'OK'."
             # generate_responseを使用してトークン使用量を記録
             response = self.generate_response(
                 prompt=test_prompt,
-                model='gemini-2.0-flash-lite',
+                model=test_model,
                 max_tokens=10,
                 phase="Connection Test"  # レポートで識別できるようにphaseを設定
             )
