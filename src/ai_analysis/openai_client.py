@@ -466,9 +466,35 @@ class OpenAIClient(BaseLLMClient):
                 self.logger.error(f"Response output is None or empty. Response ID: {response.id if hasattr(response, 'id') else 'N/A'}")
 
         if not text:
-            # それでも空の場合はエラー
-            self.logger.error("No text content found in response")
-            raise ValueError("OpenAI Responses API returned no text content")
+            # それでも空の場合は詳細なエラー情報を出力
+            model_name = response.model if hasattr(response, 'model') else 'Unknown'
+            error_msg = f"No text content found in response from model '{model_name}'"
+
+            # レスポンスの詳細情報をログに記録
+            if hasattr(response, 'id'):
+                error_msg += f"\nResponse ID: {response.id}"
+            if hasattr(response, 'status'):
+                error_msg += f"\nStatus: {response.status}"
+
+            # outputの状態を確認
+            if hasattr(response, 'output'):
+                if response.output is None:
+                    error_msg += "\noutput: None (no output generated)"
+                elif len(response.output) == 0:
+                    error_msg += "\noutput: [] (empty array)"
+                else:
+                    error_msg += f"\noutput: {len(response.output)} items, but no text content found"
+
+            self.logger.error(error_msg)
+
+            # gpt-5-nanoの場合は特別なヒントを追加
+            if model_name and 'gpt-5-nano' in model_name:
+                self.logger.warning(
+                    "gpt-5-nano may have different behavior or requirements. "
+                    "Consider using gpt-5-mini or checking model availability."
+                )
+
+            raise ValueError(f"OpenAI Responses API returned no text content for model '{model_name}'")
 
         self.logger.debug(
             f"OpenAI Responses API response received: "
