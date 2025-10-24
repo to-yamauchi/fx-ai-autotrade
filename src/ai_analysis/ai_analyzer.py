@@ -94,7 +94,15 @@ class AIAnalyzer:
         self.timeframe_converter = TimeframeConverter()
         self.technical_indicators = TechnicalIndicators()
         self.data_standardizer = DataStandardizer()
-        self.gemini_client = GeminiClient()
+
+        # マルチプロバイダー対応: Phase別にLLMクライアントを生成
+        from src.ai_analysis.llm_client_factory import create_phase_clients
+        self.phase_clients = create_phase_clients()
+
+        # 後方互換性のため、gemini_clientも保持（deprecated）
+        # 注: 新しいコードではself.phase_clients['phase_name']を使用してください
+        from src.ai_analysis.gemini_client import GeminiClient
+        self.gemini_client = GeminiClient()  # deprecated
 
         # DB接続情報
         self.db_config = {
@@ -167,8 +175,10 @@ class AIAnalyzer:
 
             self.logger.info("Data standardization completed")
 
-            # 5. AI分析実行
-            ai_result = self.gemini_client.analyze_market(
+            # 5. AI分析実行（マルチプロバイダー対応）
+            # analyze_marketは通常Phase 3の定期更新で使用される
+            client = self.phase_clients.get('periodic_update', self.gemini_client)
+            ai_result = client.analyze_market(
                 market_data=standardized_data,
                 model=self.model
             )
@@ -569,10 +579,12 @@ class AIAnalyzer:
                 statistics_json=json.dumps(statistics, ensure_ascii=False, indent=2)
             )
 
-            self.logger.info("Calling Gemini Pro for daily review...")
+            self.logger.info("Calling LLM for daily review...")
 
             # Phase 1: デイリーレビュー用モデル（.envのMODEL_DAILY_ANALYSISから取得）
-            response = self.gemini_client.generate_response(
+            # マルチプロバイダー対応: phase_clientsから適切なクライアントを使用
+            client = self.phase_clients.get('daily_analysis', self.gemini_client)
+            response = client.generate_response(
                 prompt=prompt,
                 model='daily_analysis',
                 phase='Phase 1 (Daily Review)'
@@ -733,10 +745,12 @@ class AIAnalyzer:
                 '{past_statistics_json}', json.dumps(past_statistics, ensure_ascii=False, indent=2)
             )
 
-            self.logger.info("Calling Gemini Pro for morning analysis...")
+            self.logger.info("Calling LLM for morning analysis...")
 
             # Phase 2: 朝の詳細分析用モデル（.envのMODEL_DAILY_ANALYSISから取得）
-            response = self.gemini_client.generate_response(
+            # マルチプロバイダー対応: phase_clientsから適切なクライアントを使用
+            client = self.phase_clients.get('daily_analysis', self.gemini_client)
+            response = client.generate_response(
                 prompt=prompt,
                 model='daily_analysis',
                 phase='Phase 2 (Morning Analysis)'
@@ -979,10 +993,12 @@ class AIAnalyzer:
                 update_time=update_time
             )
 
-            self.logger.info(f"Calling Gemini Flash for periodic update ({update_time})...")
+            self.logger.info(f"Calling LLM for periodic update ({update_time})...")
 
             # Phase 3: 定期更新用モデル（.envのMODEL_PERIODIC_UPDATEから取得）
-            response = self.gemini_client.generate_response(
+            # マルチプロバイダー対応: phase_clientsから適切なクライアントを使用
+            client = self.phase_clients.get('periodic_update', self.gemini_client)
+            response = client.generate_response(
                 prompt=prompt,
                 model='periodic_update',
                 phase='Phase 3 (Periodic Update)'
@@ -1202,10 +1218,12 @@ class AIAnalyzer:
                 daily_strategy_json=json.dumps(daily_strategy, ensure_ascii=False, indent=2)
             )
 
-            self.logger.debug("Calling Gemini Flash-8B for Layer 3a monitoring...")
+            self.logger.debug("Calling LLM for Layer 3a monitoring...")
 
             # Phase 4: Layer 3a監視用モデル（.envのMODEL_POSITION_MONITORから取得）
-            response = self.gemini_client.generate_response(
+            # マルチプロバイダー対応: phase_clientsから適切なクライアントを使用
+            client = self.phase_clients.get('position_monitor', self.gemini_client)
+            response = client.generate_response(
                 prompt=prompt,
                 model='position_monitor',
                 phase='Phase 4 (Layer 3a Monitor)'
@@ -1388,10 +1406,12 @@ class AIAnalyzer:
                 strategy_json=json.dumps(daily_strategy, ensure_ascii=False, indent=2)
             )
 
-            self.logger.warning("Calling Gemini Pro for Layer 3b emergency evaluation...")
+            self.logger.warning("Calling LLM for Layer 3b emergency evaluation...")
 
             # Phase 5: Layer 3b緊急評価用モデル（.envのMODEL_EMERGENCY_EVALUATIONから取得）
-            response = self.gemini_client.generate_response(
+            # マルチプロバイダー対応: phase_clientsから適切なクライアントを使用
+            client = self.phase_clients.get('emergency_evaluation', self.gemini_client)
+            response = client.generate_response(
                 prompt=prompt,
                 model='emergency_evaluation',
                 phase='Phase 5 (Layer 3b Emergency)'
