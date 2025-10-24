@@ -421,11 +421,22 @@ class OpenAIClient(BaseLLMClient):
 
         # OpenAI SDKのResponseオブジェクトにはoutput_textプロパティがある
         # これがすべてのoutput_textコンテンツを集約したもの
+        # ただし、response.outputがNoneの場合、output_textアクセス時にエラーになる
+        text = ""
+
         if not hasattr(response, 'output_text'):
             self.logger.error(f"Response has no 'output_text' property. Type: {type(response)}")
             raise ValueError("OpenAI Responses API returned unexpected response type")
 
-        text = response.output_text
+        # output_textにアクセスする前に、outputがNoneでないことを確認
+        if hasattr(response, 'output') and response.output is not None:
+            try:
+                text = response.output_text
+            except (TypeError, AttributeError) as e:
+                self.logger.warning(f"Failed to access output_text property: {e}")
+                text = ""
+        else:
+            self.logger.warning(f"Response.output is None, cannot access output_text property")
 
         # output_textが空の場合、代替手段を試す
         if not text:
@@ -435,17 +446,24 @@ class OpenAIClient(BaseLLMClient):
             if hasattr(response, 'output') and response.output:
                 texts = []
                 for output_item in response.output:
-                    if hasattr(output_item, 'content'):
+                    if hasattr(output_item, 'content') and output_item.content:
                         for content_item in output_item.content:
-                            # 'text'タイプのコンテンツを探す（output_textではなく）
-                            if hasattr(content_item, 'type') and content_item.type == 'text':
+                            # 'output_text'タイプまたは'text'タイプのコンテンツを探す
+                            content_type = content_item.type if hasattr(content_item, 'type') else None
+                            if content_type in ['output_text', 'text']:
                                 if hasattr(content_item, 'text'):
                                     texts.append(content_item.text)
-                                    self.logger.debug(f"Found 'text' type content: {len(content_item.text)} chars")
+                                    self.logger.debug(f"Found '{content_type}' type content: {len(content_item.text)} chars")
+                            else:
+                                self.logger.debug(f"Skipping content type: {content_type}")
 
                 if texts:
                     text = "".join(texts)
-                    self.logger.info(f"Extracted text from 'text' type content: {len(text)} chars")
+                    self.logger.info(f"Extracted text from output.content: {len(text)} chars")
+                else:
+                    self.logger.warning("No text content found in output.content array")
+            else:
+                self.logger.error(f"Response output is None or empty. Response ID: {response.id if hasattr(response, 'id') else 'N/A'}")
 
         if not text:
             # それでも空の場合はエラー
