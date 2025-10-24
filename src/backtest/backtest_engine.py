@@ -46,6 +46,7 @@ from src.backtest.csv_tick_loader import CSVTickLoader
 from src.ai_analysis.ai_analyzer import AIAnalyzer
 from src.data_processing.mt5_data_loader import MT5DataLoader
 from src.rule_engine.trading_rules import TradingRules
+from src.rule_engine.structured_rule_engine import StructuredRuleEngine
 
 
 class BacktestEngine:
@@ -125,6 +126,7 @@ class BacktestEngine:
             self.has_csv_backup = False
 
         self.rules = TradingRules()
+        self.structured_rule_engine = StructuredRuleEngine()
 
         # バックテスト実行状態
         self.current_time: Optional[datetime] = None
@@ -1299,8 +1301,8 @@ class BacktestEngine:
             # 過去5日の統計を計算
             past_statistics = self._calculate_past_statistics(current_date, days=5)
 
-            # 朝の詳細分析を実行
-            strategy_result = analyzer.morning_analysis(
+            # 構造化トレードルールを生成（v2プロンプト使用）
+            structured_rule = analyzer.generate_structured_rule(
                 market_data=market_data,
                 review_result=review_result,
                 past_statistics=past_statistics
@@ -1310,9 +1312,9 @@ class BacktestEngine:
             date_str = current_date.strftime('%Y-%m-%d')
             if date_str not in self.daily_reports:
                 self.daily_reports[date_str] = {}
-            self.daily_reports[date_str]['morning_analysis'] = strategy_result
+            self.daily_reports[date_str]['morning_analysis'] = structured_rule
 
-            return strategy_result
+            return structured_rule
 
         except Exception as e:
             error_msg = f"❌ Phase 2エラー（朝の詳細分析失敗）: {e}"
@@ -1842,28 +1844,44 @@ class BacktestEngine:
 
     def _execute_trade_from_strategy(self, strategy: Dict, timestamp: datetime):
         """
-        朝の戦略に基づいてトレードを実行
+        構造化ルールに基づいてトレードを機械的に実行
 
         Args:
-            strategy: 朝の分析で生成された戦略
+            strategy: 構造化トレードルール
             timestamp: 実行時刻
         """
         try:
+            # 現在の市場データを構築
+            # TradeSimulatorから現在価格を取得
+            current_market_data = {
+                'current_price': self.simulator.current_bid,
+                'bid': self.simulator.current_bid,
+                'ask': self.simulator.current_ask,
+                'spread': (self.simulator.current_ask - self.simulator.current_bid) * 100,  # pips
+                'current_time': timestamp.strftime('%H:%M'),
+                # M15, H1等の時間足データは朝の分析で使用したものを再利用
+                # （簡略化のため、ここでは省略）
+            }
+
+            # StructuredRuleEngineでエントリー条件をチェック
+            is_valid, reason = self.structured_rule_engine.check_entry_conditions(
+                market_data=current_market_data,
+                rule=strategy
+            )
+
+            if not is_valid:
+                self.logger.debug(f"エントリー条件不一致: {reason}")
+                return
+
+            # エントリー条件を満たした場合、トレード実行
             entry_conditions = strategy.get('entry_conditions', {})
-
-            if not entry_conditions.get('should_trade', False):
-                return
-
-            # 戦略から必要な情報を抽出
             direction = entry_conditions.get('direction', 'NEUTRAL')
-            if direction == 'NEUTRAL':
-                return
 
-            # エントリー条件をAI判断形式に変換
+            # AI判断形式に変換（既存のトレード実行メソッドを使用するため）
             ai_result = {
                 'action': direction,  # BUY or SELL
                 'confidence': int(strategy.get('confidence', 0.5) * 100),  # 0.75 -> 75
-                'reasoning': strategy.get('reasoning', '朝の戦略に基づくエントリー'),
+                'reasoning': f'構造化ルールに基づくエントリー: {reason}',
                 'symbol': self.symbol,
                 'timestamp': timestamp.isoformat(),
                 'entry_conditions': entry_conditions,
@@ -1871,7 +1889,7 @@ class BacktestEngine:
                 'risk_management': strategy.get('risk_management', {})
             }
 
-            # 既存のトレード実行メソッドを利用
+            # トレード実行
             self._execute_trade(ai_result, timestamp)
 
         except Exception as e:

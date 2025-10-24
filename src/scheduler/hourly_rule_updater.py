@@ -70,7 +70,7 @@ class HourlyRuleUpdater:
         self.logger = logging.getLogger(__name__)
 
         # コンポーネント初期化
-        self.ai_analyzer = AIAnalyzer(default_model=ai_model)
+        self.ai_analyzer = AIAnalyzer(symbol=symbol, model=ai_model)
         self.data_loader = MT5DataLoader()
 
         # DB接続情報
@@ -217,93 +217,15 @@ class HourlyRuleUpdater:
             構造化トレードルール
         """
         try:
-            # TODO: ai_analyzer に新しいプロンプト（v2）を使用する処理を実装
-            # 現時点では仮のルールを返す
+            # AIAnalyzerの generate_structured_rule() を使用
+            # 前日の振り返りと統計は取得できないため、Noneを渡す
+            structured_rule = self.ai_analyzer.generate_structured_rule(
+                market_data=market_data,
+                review_result=None,
+                past_statistics=None
+            )
 
-            now = datetime.now()
-            valid_until = now + timedelta(hours=1)
-
-            # 仮の構造化ルール
-            rule = {
-                "version": "2.0",
-                "generated_at": now.isoformat(),
-                "valid_until": valid_until.isoformat(),
-                "daily_bias": "BUY",
-                "confidence": 0.70,
-                "reasoning": "AI analysis based on current market conditions",
-                "market_environment": {
-                    "trend": "Ranging with slight upward bias",
-                    "strength": "Medium",
-                    "phase": "Consolidation"
-                },
-                "entry_conditions": {
-                    "should_trade": True,
-                    "direction": "BUY",
-                    "price_zone": {
-                        "min": market_data.get('current_price', 149.50) - 0.10,
-                        "max": market_data.get('current_price', 149.50) + 0.10
-                    },
-                    "indicators": {
-                        "rsi": {
-                            "timeframe": "M15",
-                            "min": 50,
-                            "max": 70
-                        },
-                        "ema": {
-                            "timeframe": "M15",
-                            "condition": "price_above",
-                            "period": 20
-                        },
-                        "macd": {
-                            "timeframe": "M15",
-                            "condition": "histogram_positive"
-                        }
-                    },
-                    "spread": {
-                        "max_pips": 10
-                    },
-                    "time_filter": {
-                        "avoid_times": [
-                            {"start": "09:50", "end": "10:00", "reason": "Tokyo fixing"}
-                        ]
-                    }
-                },
-                "exit_strategy": {
-                    "take_profit": [
-                        {"pips": 10, "close_percent": 30},
-                        {"pips": 20, "close_percent": 40},
-                        {"pips": 30, "close_percent": 100}
-                    ],
-                    "stop_loss": {
-                        "initial_pips": 15,
-                        "price_level": market_data.get('current_price', 149.50) - 0.15,
-                        "trailing": {
-                            "activate_at_pips": 15,
-                            "trail_distance_pips": 10
-                        }
-                    },
-                    "indicator_exits": [
-                        {
-                            "type": "macd_cross",
-                            "timeframe": "M15",
-                            "direction": "bearish",
-                            "action": "close_50"
-                        }
-                    ],
-                    "time_exits": {
-                        "max_hold_minutes": 240,
-                        "force_close_time": "23:00"
-                    }
-                },
-                "risk_management": {
-                    "position_size_multiplier": 0.8,
-                    "max_positions": 1,
-                    "max_risk_per_trade_percent": 2.0,
-                    "max_total_exposure_percent": 4.0
-                }
-            }
-
-            return rule
+            return structured_rule
 
         except Exception as e:
             self.logger.error(f"Failed to generate rule: {e}", exc_info=True)
