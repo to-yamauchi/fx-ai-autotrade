@@ -97,7 +97,13 @@ class AIAnalyzer:
 
         # マルチプロバイダー対応: Phase別にLLMクライアントを生成
         from src.ai_analysis.llm_client_factory import create_phase_clients
-        self.phase_clients = create_phase_clients()
+        try:
+            self.phase_clients = create_phase_clients()
+            self.logger.info("Multi-provider LLM clients initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize phase clients: {e}")
+            self.logger.warning("Falling back to GeminiClient for all phases")
+            self.phase_clients = {}
 
         # 後方互換性のため、gemini_clientも保持（deprecated）
         # 注: 新しいコードではself.phase_clients['phase_name']を使用してください
@@ -180,7 +186,7 @@ class AIAnalyzer:
             client = self.phase_clients.get('periodic_update', self.gemini_client)
             ai_result = client.analyze_market(
                 market_data=standardized_data,
-                model=self.model
+                model='periodic_update'  # Phase名を渡してclient内で適切なモデルを選択
             )
 
             # 6. 結果にメタデータを追加
