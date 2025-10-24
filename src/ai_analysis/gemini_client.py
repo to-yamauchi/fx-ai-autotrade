@@ -112,8 +112,8 @@ class GeminiClient(BaseLLMClient):
         # 分析プロンプトの構築
         prompt = self._build_analysis_prompt(market_data)
 
-        # モデルの選択
-        selected_model = self._select_model(model)
+        # モデルの選択と実際のモデル名を取得
+        selected_model, actual_model_name = self._select_model(model)
 
         try:
             # AI分析の実行（ログは最小限に）
@@ -156,8 +156,8 @@ class GeminiClient(BaseLLMClient):
         Raises:
             Exception: API呼び出しエラー時
         """
-        # モデルの選択
-        selected_model = self._select_model(model)
+        # モデルの選択と実際のモデル名を取得
+        selected_model, actual_model_name = self._select_model(model)
 
         # パラメータのデフォルト値を設定から取得
         if temperature is None:
@@ -225,7 +225,7 @@ class GeminiClient(BaseLLMClient):
                 tracker.record_usage(
                     phase=kwargs.get('phase', 'Unknown'),
                     provider='gemini',
-                    model=model,
+                    model=actual_model_name,  # 実際に使用されたモデル名を記録
                     input_tokens=input_tokens,
                     output_tokens=output_tokens
                 )
@@ -320,7 +320,7 @@ class GeminiClient(BaseLLMClient):
                 - 'flash-lite', 'flash-8b' or 'position_monitor': gemini-2.5-flash相当
 
         Returns:
-            選択されたGenerativeModelオブジェクト
+            Tuple[GenerativeModel, str]: (選択されたGenerativeModelオブジェクト, 実際のモデル名)
         """
         # 短縮名から完全なモデル名へのマッピング（後方互換性）
         model_name_mapping = {
@@ -341,8 +341,8 @@ class GeminiClient(BaseLLMClient):
             # すでに完全なモデル名（例: gemini-2.5-flash, claude-sonnet-4-5など）
             model_name = model
 
-        # GenerativeModelオブジェクトを生成
-        return genai.GenerativeModel(model_name)
+        # GenerativeModelオブジェクトを生成して、モデル名も返す
+        return genai.GenerativeModel(model_name), model_name
 
     def _parse_response(self, response_text: str) -> Dict:
         """
