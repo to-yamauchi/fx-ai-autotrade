@@ -34,9 +34,11 @@ response = client.generate_response(
 【作成日】2025-10-23
 """
 
-from typing import Optional
+from typing import Optional, Dict
 import logging
 import time
+import json
+import re
 from anthropic import Anthropic, InternalServerError, RateLimitError
 from src.ai_analysis.base_llm_client import BaseLLMClient
 
@@ -296,3 +298,179 @@ class AnthropicClient(BaseLLMClient):
             str: "anthropic"
         """
         return "anthropic"
+
+    def analyze_market(self,
+                      market_data: Dict,
+                      model: str = 'claude-sonnet-4-5') -> Dict:
+        """
+        マーケットデータを分析してトレード判断を行う
+
+        Args:
+            market_data: 標準化されたマーケットデータ（DataStandardizerの出力）
+            model: 使用するモデル (例: 'claude-sonnet-4-5', 'daily_analysis')
+
+        Returns:
+            AI判断結果の辞書
+            {
+                'action': 'BUY' | 'SELL' | 'HOLD',
+                'confidence': 0-100の数値,
+                'reasoning': '判断理由の説明',
+                'entry_price': エントリー推奨価格 (optional),
+                'stop_loss': SL推奨価格 (optional),
+                'take_profit': TP推奨価格 (optional)
+            }
+
+        Raises:
+            Exception: API呼び出しエラー時（エラーはログに記録し、HOLDを返す）
+        """
+        try:
+            # 分析プロンプトの構築
+            prompt = self._build_analysis_prompt(market_data)
+
+            # generate_responseを使用してAI分析を実行
+            response = self.generate_response(
+                prompt=prompt,
+                model=model,
+                phase='Market Analysis'
+            )
+
+            # レスポンスのパース
+            result = self._parse_response(response)
+
+            return result
+
+        except Exception as e:
+            # エラー時はHOLDを返す
+            self.logger.error(f"AI analysis error: {e}")
+            return {
+                'action': 'HOLD',
+                'confidence': 0,
+                'reasoning': f'Error occurred during AI analysis: {str(e)}'
+            }
+
+    def _build_analysis_prompt(self, market_data: Dict) -> str:
+        """
+        分析プロンプトを構築する
+
+        Args:
+            market_data: 標準化されたマーケットデータ
+
+        Returns:
+            分析プロンプト文字列
+        """
+        # マーケットデータをJSON文字列に変換
+        market_data_json = json.dumps(market_data, indent=2, ensure_ascii=False)
+
+        prompt = f"""あなたはプロのFXトレーダーです。以下のマーケットデータを分析し、トレード判断を行ってください。
+
+## マーケットデータ
+{market_data_json}
+
+## 分析指示
+1. **各時間足のトレンド分析**
+   - D1（日足）: 長期トレンドを確認
+   - H4（4時間足）: 中期トレンドを確認
+   - H1（1時間足）: 短期トレンドを確認
+   - M15（15分足）: エントリータイミングを確認
+
+2. **テクニカル指標分析**
+   - EMA: トレンド方向の確認（短期EMAと長期EMAの関係）
+   - RSI: 買われすぎ/売られすぎの判断
+   - MACD: モメンタムとトレンド転換の確認
+   - Bollinger Bands: ボラティリティと価格位置の確認
+   - ATR: 現在のボラティリティレベル
+
+3. **サポート・レジスタンス**
+   - 重要な価格レベルを考慮
+   - ブレイクアウトの可能性を評価
+
+4. **総合判断**
+   - 上記の分析を総合し、BUY/SELL/HOLDのいずれかを選択
+   - 信頼度（0-100）を数値で示す
+   - 判断理由を明確に説明
+
+## 判断基準
+- **BUY**: 上昇トレンドが明確で、エントリーに適した状況
+- **SELL**: 下降トレンドが明確で、エントリーに適した状況
+- **HOLD**: トレンドが不明確、またはエントリーに不適切な状況
+
+## 重要事項
+- 複数の時間足が同じ方向を示している場合、信頼度を高くする
+- テクニカル指標が矛盾している場合は、慎重にHOLDを選択
+- ボラティリティが高すぎる/低すぎる場合は考慮に入れる
+
+## 出力フォーマット
+以下のJSON形式で回答してください（他のテキストは含めないでください）:
+
+```json
+{{
+  "action": "BUY" or "SELL" or "HOLD",
+  "confidence": 0-100の数値,
+  "reasoning": "判断理由の詳細な説明",
+  "entry_price": 推奨エントリー価格（optional）,
+  "stop_loss": 推奨SL価格（optional）,
+  "take_profit": 推奨TP価格（optional）
+}}
+```
+"""
+        return prompt
+
+    def _parse_response(self, response_text: str) -> Dict:
+        """
+        AIレスポンスをパースする
+
+        Args:
+            response_text: AIからの応答テキスト
+
+        Returns:
+            パースされた判断結果の辞書
+        """
+        try:
+            # JSONブロック（```json ... ```）を抽出
+            json_match = re.search(
+                r'```json\s*(\{.*?\})\s*```',
+                response_text,
+                re.DOTALL
+            )
+
+            if json_match:
+                json_text = json_match.group(1)
+            else:
+                # JSONブロックがない場合、{ } で囲まれた部分を探す
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                if json_match:
+                    json_text = json_match.group(0)
+                else:
+                    # JSON形式が見つからない場合
+                    raise ValueError("No JSON format found in response")
+
+            # JSONをパース
+            result = json.loads(json_text)
+
+            # 必須フィールドの検証
+            if 'action' not in result:
+                raise ValueError("'action' field is missing in response")
+
+            if result['action'] not in ['BUY', 'SELL', 'HOLD']:
+                raise ValueError(f"Invalid action: {result['action']}")
+
+            # confidenceのデフォルト値
+            if 'confidence' not in result:
+                result['confidence'] = 50
+
+            # reasoningのデフォルト値
+            if 'reasoning' not in result:
+                result['reasoning'] = 'No reasoning provided'
+
+            return result
+
+        except (json.JSONDecodeError, ValueError) as e:
+            # パース失敗時はデフォルト値を返す
+            self.logger.error(f"Failed to parse AI response: {e}")
+            self.logger.debug(f"Response text: {response_text}")
+
+            return {
+                'action': 'HOLD',
+                'confidence': 0,
+                'reasoning': f'Failed to parse AI response: {str(e)}'
+            }
