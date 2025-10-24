@@ -559,9 +559,24 @@ class BacktestEngine:
             layer3a_count = 0
             layer3b_count = 0
 
+            # 進捗表示用
+            tick_count = 0
+            last_progress_update = None
+            progress_interval = timedelta(hours=1)  # 1時間ごとに進捗表示
+
             for tick in tick_data:
                 tick_time = tick['time']
                 if current_date <= tick_time.date() < next_date:
+                    tick_count += 1
+
+                    # 進捗表示（1時間ごと）
+                    if last_progress_update is None or (tick_time - last_progress_update) >= progress_interval:
+                        print(f"  ⏰ {tick_time.strftime('%Y-%m-%d %H:%M:%S')} | "
+                              f"処理済: {tick_count:,}ティック | "
+                              f"残高: {self.simulator.balance:,.0f}円 | "
+                              f"ポジション: {len(self.simulator.open_positions)}個")
+                        last_progress_update = tick_time
+
                     # 市場価格を更新
                     self.simulator.update_market_price(
                         bid=tick['bid'],
