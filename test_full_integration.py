@@ -104,56 +104,6 @@ def get_date_range_interactive():
 
     return start_date, end_date
 
-def calculate_api_costs(days, avg_positions_per_day=2, avg_monitoring_per_position=8, anomaly_rate=0.05):
-    """
-    API利用コストを計算
-
-    Args:
-        days: テスト期間の日数
-        avg_positions_per_day: 1日あたりの平均ポジション数
-        avg_monitoring_per_position: 1ポジションあたりの平均監視回数
-        anomaly_rate: 異常検知率（0.0-1.0）
-
-    Returns:
-        Dict: コスト内訳
-    """
-    # Phase 1: デイリーレビュー（Gemini Pro: $0.018/call）
-    # 最初の日はレビューなし
-    phase1_calls = max(0, days - 1)
-    phase1_cost = phase1_calls * 0.018
-
-    # Phase 2: 朝の詳細分析（Gemini Pro: $0.018/call）
-    phase2_calls = days
-    phase2_cost = phase2_calls * 0.018
-
-    # Phase 3: 定期更新（Gemini Flash: $0.002/call）
-    # 12:00, 16:00, 21:30 の3回/日
-    phase3_calls = days * 3
-    phase3_cost = phase3_calls * 0.002
-
-    # Phase 4: Layer 3a監視（Flash-8B: $0.0003/call）
-    # ポジション保有時のみ、15分ごと
-    # 1ポジションあたり平均4時間保有 = 16回監視と仮定
-    total_positions = days * avg_positions_per_day
-    phase4_calls = int(total_positions * avg_monitoring_per_position)
-    phase4_cost = phase4_calls * 0.0003
-
-    # Phase 5: Layer 3b緊急評価（Gemini Pro: $0.018/call）
-    # 異常検知時のみ（全監視回数の5%と仮定）
-    phase5_calls = int(phase4_calls * anomaly_rate)
-    phase5_cost = phase5_calls * 0.018
-
-    total_cost = phase1_cost + phase2_cost + phase3_cost + phase4_cost + phase5_cost
-
-    return {
-        'phase1': {'calls': phase1_calls, 'cost': phase1_cost},
-        'phase2': {'calls': phase2_calls, 'cost': phase2_cost},
-        'phase3': {'calls': phase3_calls, 'cost': phase3_cost},
-        'phase4': {'calls': phase4_calls, 'cost': phase4_cost},
-        'phase5': {'calls': phase5_calls, 'cost': phase5_cost},
-        'total_calls': phase1_calls + phase2_calls + phase3_calls + phase4_calls + phase5_calls,
-        'total_cost': total_cost
-    }
 
 def main():
     """メイン処理"""
@@ -275,25 +225,6 @@ def main():
 
     print("")
 
-    # APIコスト推定
-    cost_estimate = calculate_api_costs(days)
-
-    print("=" * 80)
-    print("推定APIコスト")
-    print("=" * 80)
-    print(f"Phase 1 (デイリーレビュー):  {cost_estimate['phase1']['calls']:3d}回 × $0.018 = ${cost_estimate['phase1']['cost']:.3f}")
-    print(f"Phase 2 (朝の詳細分析):      {cost_estimate['phase2']['calls']:3d}回 × $0.018 = ${cost_estimate['phase2']['cost']:.3f}")
-    print(f"Phase 3 (定期更新):          {cost_estimate['phase3']['calls']:3d}回 × $0.002 = ${cost_estimate['phase3']['cost']:.3f}")
-    print(f"Phase 4 (Layer 3a監視):      {cost_estimate['phase4']['calls']:3d}回 × $0.0003 = ${cost_estimate['phase4']['cost']:.3f} (推定)")
-    print(f"Phase 5 (Layer 3b緊急評価):  {cost_estimate['phase5']['calls']:3d}回 × $0.018 = ${cost_estimate['phase5']['cost']:.3f} (推定)")
-    print("-" * 80)
-    print(f"合計推定コスト:              ${cost_estimate['total_cost']:.3f} (約{cost_estimate['total_calls']}回のAPI呼び出し)")
-    print()
-    print("注意:")
-    print("  - Phase 4/5の回数は実際のポジション数と異常検知により変動します")
-    print("  - 上記は平均的なケースの推定値です")
-    print()
-
     print("=" * 80)
     print("データ要件")
     print("=" * 80)
@@ -358,18 +289,10 @@ def main():
         print(f"  最大連勝: {results.get('max_consecutive_wins', 0)}")
         print()
 
-        # AI分析実行回数とコスト
-        print("【AI分析実行回数とコスト】")
-        print(f"  Phase 1 (デイリーレビュー):    {cost_estimate['phase1']['calls']:3d}回 → ${cost_estimate['phase1']['cost']:.3f}")
-        print(f"  Phase 2 (朝の詳細分析):        {cost_estimate['phase2']['calls']:3d}回 → ${cost_estimate['phase2']['cost']:.3f}")
-        print(f"  Phase 3 (定期更新):            {cost_estimate['phase3']['calls']:3d}回 → ${cost_estimate['phase3']['cost']:.3f}")
-        print(f"  Phase 4 (Layer 3a監視):        {cost_estimate['phase4']['calls']:3d}回 → ${cost_estimate['phase4']['cost']:.3f} (推定)")
-        print(f"  Phase 5 (Layer 3b緊急評価):    {cost_estimate['phase5']['calls']:3d}回 → ${cost_estimate['phase5']['cost']:.3f} (推定)")
-        print("  " + "-" * 70)
-        print(f"  合計:                          {cost_estimate['total_calls']:3d}回 → ${cost_estimate['total_cost']:.3f}")
-        print()
-        print("  ※ Phase 4/5は推定値です。実際の回数はログを確認してください。")
-        print()
+        # トークン使用量レポート
+        from src.ai_analysis.token_usage_tracker import get_token_tracker
+        tracker = get_token_tracker()
+        tracker.print_summary()
 
         # データベース確認
         print("=" * 80)
