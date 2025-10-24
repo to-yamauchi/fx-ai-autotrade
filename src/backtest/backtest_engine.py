@@ -1185,12 +1185,14 @@ class BacktestEngine:
                 f"日付={review_date}"
             )
 
-            # AIAnalyzer初期化
+            # AIAnalyzer初期化（分析対象日を渡してルックアヘッド・バイアスを防ぐ）
+            analysis_datetime = datetime.combine(current_date, datetime.min.time())
             analyzer = AIAnalyzer(
                 symbol=self.symbol,
                 model='daily_analysis',  # デイリー分析用モデル
                 backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
-                backtest_end_date=self.end_date.strftime('%Y-%m-%d')
+                backtest_end_date=self.end_date.strftime('%Y-%m-%d'),
+                analysis_date=analysis_datetime  # この日の00:00までのデータのみ使用
             )
 
             # 統計情報を生成
@@ -1257,12 +1259,14 @@ class BacktestEngine:
                 f"日付={current_date}"
             )
 
-            # AIAnalyzer初期化
+            # AIAnalyzer初期化（分析対象日を渡してルックアヘッド・バイアスを防ぐ）
+            analysis_datetime = datetime.combine(current_date, datetime.min.time())
             analyzer = AIAnalyzer(
                 symbol=self.symbol,
                 model='daily_analysis',  # デイリー分析用モデル
                 backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
-                backtest_end_date=self.end_date.strftime('%Y-%m-%d')
+                backtest_end_date=self.end_date.strftime('%Y-%m-%d'),
+                analysis_date=analysis_datetime  # この日の00:00までのデータのみ使用
             )
 
             # 市場データを取得（標準化済みデータ）
@@ -1356,12 +1360,14 @@ class BacktestEngine:
                 f"日付={current_date}, 時刻={update_time}"
             )
 
-            # AIAnalyzer初期化
+            # AIAnalyzer初期化（分析対象日を渡してルックアヘッド・バイアスを防ぐ）
+            analysis_datetime = datetime.combine(current_date, datetime.min.time())
             analyzer = AIAnalyzer(
                 symbol=self.symbol,
                 model='periodic_update',  # 定期更新用モデル
                 backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
-                backtest_end_date=self.end_date.strftime('%Y-%m-%d')
+                backtest_end_date=self.end_date.strftime('%Y-%m-%d'),
+                analysis_date=analysis_datetime  # この日の00:00までのデータのみ使用
             )
 
             # 現在の市場データを取得
