@@ -464,9 +464,9 @@ class TickDataLoader:
             FileNotFoundError: 必要なファイルが見つからない場合
         """
         # 日付範囲の検証
-        if start_date >= end_date:
+        if start_date > end_date:
             raise ValueError(
-                f"start_date ({start_date.date()}) must be before "
+                f"start_date ({start_date.date()}) must be before or equal to "
                 f"end_date ({end_date.date()})"
             )
 
