@@ -104,7 +104,12 @@ class BacktestEngine:
         self.logger = logging.getLogger(__name__)
 
         # コンポーネント初期化
-        self.simulator = TradeSimulator(initial_balance=self.initial_balance, symbol=self.symbol)
+        self.simulator = TradeSimulator(
+            initial_balance=self.initial_balance,
+            symbol=self.symbol,
+            backtest_start_date=self.start_date.date(),
+            backtest_end_date=self.end_date.date()
+        )
 
         # データローダー：CSVまたはMT5
         if self.csv_path:

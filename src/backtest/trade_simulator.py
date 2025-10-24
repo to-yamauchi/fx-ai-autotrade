@@ -37,8 +37,11 @@ simulator.close_position(ticket)
 """
 
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, date
 import logging
+import os
+import psycopg2
+from psycopg2.extras import Json
 
 
 class TradeSimulator:
@@ -52,7 +55,9 @@ class TradeSimulator:
         self,
         initial_balance: float = 100000.0,
         spread_pips: float = 2.0,
-        symbol: str = 'USDJPY'
+        symbol: str = 'USDJPY',
+        backtest_start_date: Optional[date] = None,
+        backtest_end_date: Optional[date] = None
     ):
         """
         シミュレーターの初期化
@@ -61,6 +66,8 @@ class TradeSimulator:
             initial_balance: 初期残高
             spread_pips: スプレッド（pips）
             symbol: 通貨ペア
+            backtest_start_date: バックテスト開始日（DB保存用）
+            backtest_end_date: バックテスト終了日（DB保存用）
         """
         self.symbol = symbol
         self.initial_balance = initial_balance
@@ -68,6 +75,20 @@ class TradeSimulator:
         self.equity = initial_balance
         self.spread_pips = spread_pips
         self.logger = logging.getLogger(__name__)
+
+        # バックテスト期間（DB保存用）
+        self.backtest_start_date = backtest_start_date
+        self.backtest_end_date = backtest_end_date
+
+        # DB接続設定
+        self.db_config = {
+            'host': os.getenv('DB_HOST', 'localhost'),
+            'port': int(os.getenv('DB_PORT', 5432)),
+            'database': os.getenv('DB_NAME', 'fx_autotrade'),
+            'user': os.getenv('DB_USER', 'postgres'),
+            'password': os.getenv('DB_PASSWORD', ''),
+            'client_encoding': 'UTF8'
+        }
 
         # ポジション管理
         self.next_ticket = 1
@@ -171,6 +192,9 @@ class TradeSimulator:
         self.logger.info(f"Position opened: ticket={ticket}, {action} {volume} lots @ {entry_price}")
         print(entry_msg)
 
+        # DBに保存
+        self._save_trade_to_database(position, is_open=True)
+
         return ticket
 
     def close_position(
@@ -263,6 +287,13 @@ class TradeSimulator:
             f"profit={profit:.2f}, pips={pips:.1f}, reason={reason}"
         )
         print(close_msg)
+
+        # pips情報を追加してDB更新
+        position['profit_pips'] = pips
+        position['exit_price'] = close_price
+        position['exit_time'] = position['close_time']
+        position['exit_reason'] = reason
+        self._save_trade_to_database(position, is_open=False)
 
         return position
 
@@ -446,6 +477,80 @@ class TradeSimulator:
             ポジションリスト
         """
         return self.closed_positions
+
+    def _save_trade_to_database(self, position: Dict, is_open: bool):
+        """
+        トレード情報をデータベースに保存
+
+        Args:
+            position: ポジション情報
+            is_open: True=新規エントリー, False=決済（更新）
+        """
+        # バックテスト期間が設定されていない場合はスキップ
+        if not self.backtest_start_date or not self.backtest_end_date:
+            return
+
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+
+            if is_open:
+                # 新規エントリー
+                insert_query = """
+                    INSERT INTO backtest_trades
+                    (symbol, backtest_start_date, backtest_end_date, ticket, action, volume,
+                     entry_time, entry_price, stop_loss, take_profit, comment)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cursor.execute(insert_query, (
+                    self.symbol,
+                    self.backtest_start_date,
+                    self.backtest_end_date,
+                    position['ticket'],
+                    position['action'],
+                    position['volume'],
+                    position['open_time'],
+                    position['entry_price'],
+                    position.get('sl'),
+                    position.get('tp'),
+                    position.get('comment', '')
+                ))
+            else:
+                # 決済（更新）
+                update_query = """
+                    UPDATE backtest_trades
+                    SET exit_time = %s,
+                        exit_price = %s,
+                        exit_reason = %s,
+                        profit_loss = %s,
+                        profit_pips = %s
+                    WHERE symbol = %s
+                      AND backtest_start_date = %s
+                      AND backtest_end_date = %s
+                      AND ticket = %s
+                """
+                cursor.execute(update_query, (
+                    position.get('exit_time'),
+                    position.get('exit_price'),
+                    position.get('exit_reason', 'Unknown'),
+                    position.get('profit', 0.0),
+                    position.get('profit_pips', 0.0),
+                    self.symbol,
+                    self.backtest_start_date,
+                    self.backtest_end_date,
+                    position['ticket']
+                ))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            action_str = "エントリー" if is_open else "決済"
+            self.logger.debug(f"Trade {action_str} saved to database: ticket={position['ticket']}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to save trade to database: {e}")
+            # DB保存失敗は致命的ではないので続行
 
     def close_all_positions(self, reason: str = 'Close all'):
         """
