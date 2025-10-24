@@ -316,11 +316,9 @@ class OpenAIClient(BaseLLMClient):
             }
         }
 
-        # max_tokensがある場合は設定
+        # max_tokensがある場合はトップレベルパラメータとして設定
         if max_tokens is not None:
-            if "text" not in params:
-                params["text"] = {}
-            params["text"]["max_output_tokens"] = max_tokens
+            params["max_output_tokens"] = max_tokens
 
         # その他のパラメータをマージ
         params.update(kwargs)
