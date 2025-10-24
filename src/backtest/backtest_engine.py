@@ -111,17 +111,18 @@ class BacktestEngine:
             backtest_end_date=self.end_date.date()
         )
 
-        # データローダー：CSVまたはTickDataLoader（キャッシュ使用）
+        # データローダー：DBキャッシュを優先、なければCSV
+        # TickDataLoader（DBキャッシュ）を常に使用
+        from src.data_processing.tick_loader import TickDataLoader
+        self.tick_data_loader = TickDataLoader(use_cache=True)
+
+        # CSVパスが設定されている場合は、CSVローダーも準備
         if self.csv_path:
-            self.data_loader = CSVTickLoader(csv_path=self.csv_path, symbol=self.symbol)
-            self.use_csv = True
-            self.use_tick_loader = False
+            self.csv_loader = CSVTickLoader(csv_path=self.csv_path, symbol=self.symbol)
+            self.has_csv_backup = True
         else:
-            # バックテストモードではTickDataLoader（DBキャッシュ使用）を使用
-            from src.data_processing.tick_loader import TickDataLoader
-            self.data_loader = TickDataLoader(use_cache=True)
-            self.use_csv = False
-            self.use_tick_loader = True
+            self.csv_loader = None
+            self.has_csv_backup = False
 
         self.rules = TradingRules()
 
@@ -447,50 +448,72 @@ class BacktestEngine:
         # 1. 全期間のデータを取得
         print("📊 データ読み込み中...")
 
-        if self.use_csv:
-            # CSVファイルから読み込み（AI分析用に30日のバッファを含む）
-            tick_df = self.data_loader.load_ticks(
-                start_date=self.start_date.strftime('%Y-%m-%d'),
-                end_date=self.end_date.strftime('%Y-%m-%d'),
-                history_days=30  # AI分析に必要な過去データ
-            )
+        # AI分析用に30日前からのデータを読み込む
+        extended_start = self.start_date - timedelta(days=30)
 
-            # DataFrameをリストに変換
-            tick_data = []
-            for idx, row in tick_df.iterrows():
-                tick_data.append({
-                    'time': row['timestamp'],  # カラム名は'timestamp'
-                    'bid': row['bid'],
-                    'ask': row['ask']
-                })
-
-            print(f"✓ {len(tick_data):,}ティック読み込み完了（CSV）")
-            print("")
-
-        elif self.use_tick_loader:
-            # TickDataLoader（DBキャッシュ使用）から読み込み
-            # AI分析用に30日前からのデータを読み込む
-            extended_start = self.start_date - timedelta(days=30)
-
-            tick_data = self.data_loader.load_date_range(
+        # まずDBキャッシュをチェック
+        tick_data = None
+        try:
+            print("   DBキャッシュを確認中...")
+            tick_data = self.tick_data_loader.load_date_range(
                 symbol=self.symbol,
                 start_date=extended_start,
                 end_date=self.end_date
             )
 
             # キャッシュ使用統計を表示
-            stats = self.data_loader.last_cache_stats
-            if stats:
-                print(f"✓ {len(tick_data):,}ティック読み込み完了 | "
+            stats = self.tick_data_loader.last_cache_stats
+            if stats and stats['hit_rate'] >= 100.0:
+                # 100%キャッシュヒット
+                print(f"✓ {len(tick_data):,}ティック読み込み完了（DBキャッシュ） | "
+                      f"キャッシュヒット: {stats['cache_hits']}/{stats['total_days']}日 (100.0%)")
+                print("")
+            elif stats and stats['hit_rate'] > 0:
+                # 一部キャッシュヒット - ZIPから読み込んだデータもある
+                print(f"✓ {len(tick_data):,}ティック読み込み完了（DBキャッシュ + ZIP） | "
                       f"キャッシュヒット: {stats['cache_hits']}/{stats['total_days']}日 ({stats['hit_rate']:.1f}%) | "
                       f"ZIPロード: {stats['months_loaded']}ヶ月")
+                print("")
             else:
-                print(f"✓ {len(tick_data):,}ティック読み込み完了（キャッシュ未使用）")
-            print("")
+                # キャッシュミス（例外発生）
+                raise Exception("DBキャッシュにデータがありません")
 
-        else:
-            self.logger.error("❌ データローダーが正しく初期化されていません")
-            return {}
+        except Exception as e:
+            # DBキャッシュからの読み込みに失敗した場合、CSVから読み込む
+            if self.has_csv_backup:
+                print(f"   DBキャッシュ読み込み失敗: {e}")
+                print(f"   CSVファイルから読み込み中...")
+
+                # CSVファイルから読み込み（AI分析用に30日のバッファを含む）
+                tick_df = self.csv_loader.load_ticks(
+                    start_date=extended_start.strftime('%Y-%m-%d'),
+                    end_date=self.end_date.strftime('%Y-%m-%d'),
+                    history_days=0  # extended_startで既に30日前から指定している
+                )
+
+                # DataFrameをリストに変換
+                tick_data = []
+                for idx, row in tick_df.iterrows():
+                    tick_data.append({
+                        'timestamp': row['timestamp'],
+                        'time': row['timestamp'],
+                        'bid': row['bid'],
+                        'ask': row['ask'],
+                        'volume': row.get('volume', 0)
+                    })
+
+                print(f"✓ {len(tick_data):,}ティック読み込み完了（CSV）")
+
+                # CSVから読み込んだデータをDBキャッシュに保存
+                print("   DBキャッシュに保存中...")
+                self._save_ticks_to_cache(tick_data, extended_start.date(), self.end_date.date())
+                print("   ✓ DBキャッシュに保存完了")
+                print("")
+            else:
+                # CSVもない場合はエラー
+                self.logger.error(f"❌ データ読み込み失敗: {e}")
+                self.logger.error("   DBキャッシュにデータがなく、CSVパスも設定されていません")
+                return {}
 
         # 時刻キーの統一（'timestamp' に変換）
         if tick_data and 'timestamp' in tick_data[0]:
@@ -1776,6 +1799,48 @@ class BacktestEngine:
             error_msg = f"❌ トレード実行エラー: {e}"
             self.logger.error(error_msg, exc_info=True)
             print(error_msg)
+
+    def _save_ticks_to_cache(self, tick_data: List[Dict], start_date: date, end_date: date):
+        """
+        ティックデータをDBキャッシュに保存
+
+        Args:
+            tick_data: ティックデータのリスト
+            start_date: 開始日
+            end_date: 終了日
+        """
+        try:
+            from datetime import timedelta
+
+            # 日付ごとにグループ化
+            by_date = {}
+            for tick in tick_data:
+                tick_date = tick['timestamp'].date()
+                if tick_date not in by_date:
+                    by_date[tick_date] = []
+                by_date[tick_date].append(tick)
+
+            # 該当期間のデータを日付ごとに削除して保存
+            current_date = start_date
+            saved_count = 0
+            while current_date <= end_date:
+                if current_date in by_date:
+                    # この日のデータを保存
+                    self.tick_data_loader._save_to_cache(
+                        symbol=self.symbol,
+                        date=current_date,
+                        tick_data=by_date[current_date]
+                    )
+                    saved_count += len(by_date[current_date])
+                    self.logger.debug(f"Saved {len(by_date[current_date])} ticks for {current_date}")
+
+                current_date += timedelta(days=1)
+
+            self.logger.info(f"Total {saved_count:,} ticks saved to DB cache")
+
+        except Exception as e:
+            self.logger.error(f"Failed to save ticks to cache: {e}")
+            # キャッシュ保存失敗は致命的ではないので続行
 
 
 # モジュールのエクスポート
