@@ -102,6 +102,7 @@ class BacktestEngine:
         self.sampling_interval = timedelta(hours=sampling_interval_hours)
         self.risk_percent = risk_percent if risk_percent is not None else config.risk_per_trade
         self.csv_path = csv_path if csv_path is not None else config.backtest_csv_path
+        self.rule_generation_interval_hours = config.rule_generation_interval_hours
         self.logger = logging.getLogger(__name__)
 
         # コンポーネント初期化
@@ -587,10 +588,11 @@ class BacktestEngine:
                         ask=tick['ask']
                     )
 
-                    # === 毎時00分: 構造化ルール再生成（本番と同じ動作） ===
+                    # === インターバルごとの00分: 構造化ルール再生成（本番と同じ動作） ===
                     current_hour = tick_time.hour
-                    if tick_time.minute == 0 and last_rule_generation_hour != current_hour:
-                        print(f"\n🤖 {tick_time.strftime('%Y-%m-%d %H:%M')} - ルール再生成中...")
+                    is_interval_hour = current_hour % self.rule_generation_interval_hours == 0
+                    if tick_time.minute == 0 and is_interval_hour and last_rule_generation_hour != current_hour:
+                        print(f"\n🤖 {tick_time.strftime('%Y-%m-%d %H:%M')} - ルール再生成中... (間隔: {self.rule_generation_interval_hours}時間)")
 
                         # 初回のみ前日振り返り結果を渡す
                         review_to_use = review_result if hourly_rule_count == 0 else None

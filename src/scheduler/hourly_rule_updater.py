@@ -1,33 +1,39 @@
 """
 ========================================
-1時間毎ルール更新スケジューラー
+定期ルール更新スケジューラー
 ========================================
 
 ファイル名: hourly_rule_updater.py
 パス: src/scheduler/hourly_rule_updater.py
 
 【概要】
-1時間毎に最新の市場データからトレードルールを生成し、DBに保存します。
+設定された間隔で最新の市場データからトレードルールを生成し、DBに保存します。
 トレード実行エンジンは常に最新のルールを参照して機械的に判断します。
 
 【主な機能】
-1. 1時間毎のトリガー（毎時00分）
+1. 定期的なトリガー（設定間隔の毎時00分、例: 1時間毎、4時間毎）
 2. 最新市場データの取得
 3. AI分析によるルール生成
 4. DBへのルール保存
 
 【フロー】
-毎時00分 → 市場データ取得 → AI分析 → 構造化ルール生成 → DB保存
+毎時00分（間隔に応じて） → 市場データ取得 → AI分析 → 構造化ルール生成 → DB保存
+
+【設定】
+.envファイルのRULE_GENERATION_INTERVAL_HOURS で間隔を設定（デフォルト: 1時間）
+- 1: 毎時00分（00:00, 01:00, 02:00, ...）
+- 4: 4時間ごと（00:00, 04:00, 08:00, 12:00, 16:00, 20:00）
 
 【使用例】
 ```python
 from src.scheduler import HourlyRuleUpdater
 
 updater = HourlyRuleUpdater()
-updater.start()  # バックグラウンドで1時間毎に実行
+updater.start()  # バックグラウンドで設定間隔で実行
 ```
 
 【作成日】2025-01-15
+【更新日】2025-10-24 - 設定可能な間隔に対応
 """
 
 from typing import Dict, Optional
@@ -65,9 +71,15 @@ class HourlyRuleUpdater:
             symbol: 通貨ペア
             ai_model: 使用するAIモデル
         """
+        from src.utils.config import get_config
+
         self.symbol = symbol
         self.ai_model = ai_model
         self.logger = logging.getLogger(__name__)
+
+        # 設定読み込み
+        config = get_config()
+        self.rule_generation_interval_hours = config.rule_generation_interval_hours
 
         # コンポーネント初期化
         self.ai_analyzer = AIAnalyzer(symbol=symbol, model=ai_model)
@@ -89,7 +101,8 @@ class HourlyRuleUpdater:
 
         self.logger.info(
             f"HourlyRuleUpdater initialized: "
-            f"symbol={symbol}, model={ai_model}"
+            f"symbol={symbol}, model={ai_model}, "
+            f"interval={self.rule_generation_interval_hours}時間"
         )
 
     def update_rule_now(self) -> bool:
@@ -100,7 +113,19 @@ class HourlyRuleUpdater:
             成功したらTrue
         """
         try:
-            self.logger.info("=== Hourly Rule Update Started ===")
+            # インターバルチェック（スケジューラーから呼ばれた場合）
+            current_hour = datetime.now().hour
+            if current_hour % self.rule_generation_interval_hours != 0:
+                self.logger.debug(
+                    f"Skipping rule update at {current_hour}:00 "
+                    f"(interval: {self.rule_generation_interval_hours}時間)"
+                )
+                return False
+
+            self.logger.info(
+                f"=== Hourly Rule Update Started === "
+                f"(interval: {self.rule_generation_interval_hours}時間)"
+            )
 
             # 1. 最新市場データを取得
             market_data = self._get_latest_market_data()
@@ -293,7 +318,13 @@ class HourlyRuleUpdater:
         self.scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
         self.scheduler_thread.start()
 
-        self.logger.info("Hourly rule updater started (runs every hour at :00)")
+        if self.rule_generation_interval_hours == 1:
+            self.logger.info("Hourly rule updater started (runs every hour at :00)")
+        else:
+            self.logger.info(
+                f"Hourly rule updater started "
+                f"(runs every {self.rule_generation_interval_hours} hours at :00)"
+            )
 
     def _run_scheduler(self):
         """スケジューラーのメインループ"""
