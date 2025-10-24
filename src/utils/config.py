@@ -56,6 +56,11 @@ class Config:
     backtest_csv_path: Optional[str]
 
     # ========================================
+    # ルール生成設定
+    # ========================================
+    rule_generation_interval_hours: int  # ルール再生成間隔（時間）
+
+    # ========================================
     # LLM API Keys（マルチプロバイダー対応）
     # ========================================
     gemini_api_key: str
@@ -221,6 +226,9 @@ def load_config() -> Config:
         backtest_symbol=_get_env_str('BACKTEST_SYMBOL', 'USDJPY'),
         backtest_initial_balance=_get_env_float('BACKTEST_INITIAL_BALANCE', 1000000.0),
         backtest_csv_path=_get_env_str('BACKTEST_CSV_PATH', '') or None,
+
+        # ルール生成設定
+        rule_generation_interval_hours=_get_env_int('RULE_GENERATION_INTERVAL_HOURS', 1),
 
         # LLM API Keys
         gemini_api_key=_get_env_str('GEMINI_API_KEY', ''),

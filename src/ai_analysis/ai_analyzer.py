@@ -63,7 +63,8 @@ class AIAnalyzer:
                  data_dir: str = 'data/tick_data',
                  model: str = 'periodic_update',
                  backtest_start_date: Optional[str] = None,
-                 backtest_end_date: Optional[str] = None):
+                 backtest_end_date: Optional[str] = None,
+                 analysis_date: Optional[datetime] = None):
         """
         AIAnalyzerの初期化
 
@@ -76,12 +77,14 @@ class AIAnalyzer:
                        このパラメータは主に後方互換性のために残されています
             backtest_start_date: バックテスト開始日 (YYYY-MM-DD), バックテストモード時のみ
             backtest_end_date: バックテスト終了日 (YYYY-MM-DD), バックテストモード時のみ
+            analysis_date: 分析対象日（バックテストで未来データを使わないため）
         """
         self.symbol = symbol
         self.data_dir = data_dir
         self.model = model
         self.backtest_start_date = backtest_start_date
         self.backtest_end_date = backtest_end_date
+        self.analysis_date = analysis_date
         self.logger = logging.getLogger(__name__)
 
         # トレードモード設定の取得
@@ -227,14 +230,30 @@ class AIAnalyzer:
                 # バックテストモード: data/tick_dataから読み込み
                 start_date, end_date = self.mode_config.get_backtest_period()
 
-                self.logger.info(
-                    f"Loading backtest data: {start_date.date()} to {end_date.date()}"
-                )
+                # analysis_dateが指定されている場合、その日までのデータのみを使用（ルックアヘッド・バイアス防止）
+                if self.analysis_date is not None:
+                    # analysis_dateの00:00までのデータ（その日の始まりまで）
+                    effective_end_date = self.analysis_date
+
+                    # 30日前から読み込む（テクニカル指標計算のため）
+                    effective_start_date = effective_end_date - timedelta(days=30)
+
+                    self.logger.info(
+                        f"Loading backtest data up to analysis date: "
+                        f"{effective_start_date.date()} to {effective_end_date.date()}"
+                    )
+                else:
+                    effective_start_date = start_date
+                    effective_end_date = end_date
+
+                    self.logger.info(
+                        f"Loading backtest data: {start_date.date()} to {end_date.date()}"
+                    )
 
                 tick_data = self.tick_loader.load_date_range(
                     symbol=self.symbol,
-                    start_date=start_date,
-                    end_date=end_date
+                    start_date=effective_start_date,
+                    end_date=effective_end_date
                 )
 
                 # データ検証
