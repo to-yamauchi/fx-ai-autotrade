@@ -58,6 +58,71 @@ class AnthropicClient(BaseLLMClient):
         self.client = Anthropic(api_key=api_key)
         self.logger.info("Anthropic client initialized")
 
+    def _select_model(self, model: str) -> str:
+        """
+        使用するモデルを選択する
+
+        Args:
+            model: モデル名（完全なモデル名 例: claude-sonnet-4-5）
+                または短縮名（Phase名）:
+                - 'daily_analysis': MODEL_DAILY_ANALYSISの値を使用
+                - 'periodic_update': MODEL_PERIODIC_UPDATEの値を使用
+                - 'position_monitor': MODEL_POSITION_MONITORの値を使用
+                - 'emergency_evaluation': MODEL_EMERGENCY_EVALUATIONの値を使用
+
+        Returns:
+            str: 実際のモデル名
+
+        Raises:
+            ValueError: モデル設定が不正な場合
+        """
+        from src.utils.config import get_config
+        config = get_config()
+
+        # Phase名から.env設定へのマッピング
+        phase_to_config_mapping = {
+            'daily_analysis': config.model_daily_analysis,
+            'periodic_update': config.model_periodic_update,
+            'position_monitor': config.model_position_monitor,
+            'emergency_evaluation': config.model_emergency_evaluation,
+        }
+
+        # Phase名の場合は.envから設定を取得
+        if model in phase_to_config_mapping:
+            model_name = phase_to_config_mapping[model]
+            if not model_name:
+                raise ValueError(
+                    f"Model for phase '{model}' is not configured in .env file. "
+                    f"Please set the appropriate MODEL_* environment variable."
+                )
+            self.logger.debug(f"Phase '{model}' mapped to model '{model_name}'")
+        else:
+            # すでに完全なモデル名
+            model_name = model
+
+        # モデル名のバリデーション - AnthropicClient はClaudeモデルのみ対応
+        if not model_name.startswith('claude-'):
+            # Claude以外のモデルが指定された場合
+            provider_hint = "Unknown"
+            if model_name.startswith('gemini-'):
+                provider_hint = "Google Gemini"
+            elif model_name.startswith(('gpt-', 'o1-', 'chatgpt-')):
+                provider_hint = "OpenAI"
+
+            raise ValueError(
+                f"AnthropicClient cannot use non-Claude model: '{model_name}' ({provider_hint})\n"
+                f"Please configure a Claude model (claude-*) in your .env file.\n"
+                f"Example Claude models:\n"
+                f"  - claude-sonnet-4-5-20250929\n"
+                f"  - claude-3-5-haiku-20241022\n"
+                f"  - claude-opus-4\n"
+                f"\n"
+                f"If you want to use {provider_hint} models, configure them in MODEL_* variables\n"
+                f"and the system will automatically select the appropriate client."
+            )
+
+        return model_name
+
     def generate_response(
         self,
         prompt: str,
@@ -72,6 +137,7 @@ class AnthropicClient(BaseLLMClient):
         Args:
             prompt: プロンプトテキスト
             model: モデル名（例: claude-sonnet-4-5, claude-haiku-4）
+                  またはPhase名（例: daily_analysis, periodic_update）
             temperature: 温度パラメータ（0.0-1.0、デフォルト: 1.0）
             max_tokens: 最大トークン数（Noneの場合: 4096）
             **kwargs: その他のパラメータ（top_p, top_k, etc.）
@@ -83,9 +149,12 @@ class AnthropicClient(BaseLLMClient):
             Exception: API呼び出しが失敗した場合
         """
         try:
+            # Phase名を実際のモデル名に変換
+            actual_model = self._select_model(model)
+
             # パラメータ設定
             params = {
-                "model": model,
+                "model": actual_model,
                 "messages": [
                     {"role": "user", "content": prompt}
                 ],
@@ -102,7 +171,7 @@ class AnthropicClient(BaseLLMClient):
             params.update(kwargs)
 
             self.logger.debug(
-                f"Anthropic API request: model={model}, "
+                f"Anthropic API request: model={actual_model}, "
                 f"temperature={temperature}, max_tokens={max_tokens}"
             )
 
@@ -144,7 +213,7 @@ class AnthropicClient(BaseLLMClient):
                 tracker.record_usage(
                     phase=phase,
                     provider='anthropic',
-                    model=model,
+                    model=actual_model,
                     input_tokens=response.usage.input_tokens,
                     output_tokens=response.usage.output_tokens
                 )
