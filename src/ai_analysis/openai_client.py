@@ -384,6 +384,14 @@ class OpenAIClient(BaseLLMClient):
         self.logger.debug(f"Response status: {status}")
         self.logger.debug(f"Response output length: {len(response.output) if hasattr(response, 'output') and response.output else 0}")
 
+        # incompleteの場合、詳細情報を確認
+        if status == 'incomplete' and hasattr(response, 'incomplete_details'):
+            details = response.incomplete_details
+            reason = details.reason if hasattr(details, 'reason') else 'unknown'
+            self.logger.warning(f"Response is incomplete. Reason: {reason}")
+            if reason == 'max_output_tokens':
+                self.logger.warning("Response was truncated due to max_output_tokens limit. Consider increasing max_tokens.")
+
         # GPT-5は非同期で実行される可能性があるため、完了を待つ
         if status in ['in_progress', 'queued']:
             self.logger.info(f"Response status is '{status}', waiting for completion...")
@@ -521,18 +529,14 @@ class OpenAIClient(BaseLLMClient):
             # モデルが指定されていない場合はデフォルト（最も安価）を使用
             test_model = model if model else "gpt-3.5-turbo"
 
-            # GPT-5の場合は最小トークン数が16なので、それを考慮
-            # Phase名の場合は実際のモデル名に変換して判定
-            actual_model = self._select_model(test_model)
-            is_gpt5 = actual_model.startswith('gpt-5')
-            test_max_tokens = 50 if is_gpt5 else 10
-
             # 簡単なテストプロンプトを送信
-            test_prompt = "Hello, this is a connection test. Please respond with 'OK'."
+            # max_tokensは指定しない（モデルのデフォルト動作に任せる）
+            # これにより、GPT-5のreasoningが途中で切れる問題を回避
+            test_prompt = "Say OK"
             response = self.generate_response(
                 prompt=test_prompt,
                 model=test_model,
-                max_tokens=test_max_tokens,
+                max_tokens=None,  # デフォルト動作に任せる
                 phase="Connection Test"  # レポートで識別できるようにphaseを設定
             )
 
