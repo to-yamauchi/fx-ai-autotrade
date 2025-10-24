@@ -1064,6 +1064,157 @@ class AIAnalyzer:
                 'error': str(e)
             }
 
+    def generate_structured_rule(
+        self,
+        market_data: Dict,
+        review_result: Optional[Dict] = None,
+        past_statistics: Optional[Dict] = None
+    ) -> Dict:
+        """
+        構造化トレードルールを生成（v2プロンプト使用）
+
+        morning_analysis_v2.txtを使用して、プログラムが直接解釈可能な
+        構造化されたトレードルールを生成します。
+
+        Args:
+            market_data: 標準化された市場データ
+            review_result: 前日の振り返り結果（optional）
+            past_statistics: 過去5日の統計データ（optional）
+
+        Returns:
+            構造化トレードルールの辞書
+            {
+                'version': '2.0',
+                'generated_at': '2025-01-15T08:00:00Z',
+                'valid_until': '2025-01-15T09:00:00Z',
+                'daily_bias': 'BUY' | 'SELL' | 'NEUTRAL',
+                'confidence': 0.0-1.0,
+                'entry_conditions': {...},
+                'exit_strategy': {...},
+                'risk_management': {...},
+                'hourly_predictions': {...},
+                ...
+            }
+        """
+        try:
+            self.logger.info("Generating structured trading rule (v2)...")
+
+            # デフォルト値の設定
+            if review_result is None:
+                review_result = {
+                    'lessons_for_today': ['前日データなし'],
+                    'pattern_recognition': {
+                        'success_patterns': [],
+                        'failure_patterns': []
+                    }
+                }
+            if past_statistics is None:
+                past_statistics = {
+                    'last_5_days': {
+                        'total_pips': 0,
+                        'win_rate': '0%',
+                        'avg_holding_time': '0分'
+                    }
+                }
+
+            # プロンプトテンプレートの読み込み（v2）
+            prompt_path = os.path.join(
+                os.path.dirname(__file__),
+                'prompts',
+                'morning_analysis_v2.txt'
+            )
+
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                prompt_template = f.read()
+
+            # データを埋め込む
+            import json
+            prompt = prompt_template.replace(
+                '{market_data_json}', json.dumps(market_data, ensure_ascii=False, indent=2)
+            ).replace(
+                '{review_json}', json.dumps(review_result, ensure_ascii=False, indent=2)
+            ).replace(
+                '{past_statistics_json}', json.dumps(past_statistics, ensure_ascii=False, indent=2)
+            )
+
+            self.logger.info("Calling LLM for structured rule generation...")
+
+            # Phase 2: 朝の詳細分析用モデル（構造化ルール生成）
+            client = self.phase_clients.get('daily_analysis', self.gemini_client)
+            response = client.generate_response(
+                prompt=prompt,
+                model='daily_analysis',
+                phase='Phase 2 (Structured Rule Generation)'
+            )
+
+            # JSONパース
+            import re
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = response
+
+            structured_rule = json.loads(json_str)
+
+            # タイムスタンプの設定（もし含まれていなければ）
+            if 'generated_at' not in structured_rule:
+                structured_rule['generated_at'] = datetime.now().isoformat()
+            if 'valid_until' not in structured_rule:
+                # デフォルトで1時間後に期限切れ
+                structured_rule['valid_until'] = (datetime.now() + timedelta(hours=1)).isoformat()
+
+            self.logger.info(
+                f"Structured rule generated. Bias: {structured_rule.get('daily_bias', 'N/A')}, "
+                f"Confidence: {structured_rule.get('confidence', 0):.2f}"
+            )
+
+            return structured_rule
+
+        except Exception as e:
+            self.logger.error(f"Structured rule generation failed: {e}", exc_info=True)
+            # フォールバック：安全な構造化ルールを返す
+            return {
+                'version': '2.0',
+                'generated_at': datetime.now().isoformat(),
+                'valid_until': (datetime.now() + timedelta(hours=1)).isoformat(),
+                'daily_bias': 'NEUTRAL',
+                'confidence': 0.0,
+                'reasoning': f'ルール生成エラーのため保守的判断: {str(e)}',
+                'market_environment': {
+                    'trend': '不明',
+                    'strength': '不明',
+                    'phase': '不明'
+                },
+                'entry_conditions': {
+                    'should_trade': False,
+                    'direction': 'NEUTRAL',
+                    'price_zone': {'min': 0, 'max': 0},
+                    'indicators': {},
+                    'spread': {'max_pips': 10},
+                    'time_filter': {'avoid_times': []}
+                },
+                'exit_strategy': {
+                    'take_profit': [],
+                    'stop_loss': {
+                        'initial_pips': 15,
+                        'price_level': 0,
+                        'trailing': {}
+                    },
+                    'indicator_exits': [],
+                    'time_exits': {}
+                },
+                'risk_management': {
+                    'position_size_multiplier': 0.0,
+                    'max_positions': 0,
+                    'max_risk_per_trade_percent': 2.0,
+                    'max_total_exposure_percent': 4.0
+                },
+                'key_levels': {},
+                'hourly_predictions': {},
+                'error': str(e)
+            }
+
     def _save_periodic_update_to_database(
         self,
         update_result: Dict,
