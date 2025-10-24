@@ -176,8 +176,13 @@ class TickDataLoader:
 
             tick_data = []
             for row in cursor.fetchall():
+                # タイムスタンプをnaiveに変換（タイムゾーン情報を削除）
+                timestamp = row[0]
+                if hasattr(timestamp, 'tzinfo') and timestamp.tzinfo is not None:
+                    timestamp = timestamp.replace(tzinfo=None)
+
                 tick = {
-                    'timestamp': row[0],
+                    'timestamp': timestamp,
                     'bid': float(row[1]),
                     'ask': float(row[2]),
                     'volume': row[3]
