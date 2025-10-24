@@ -1006,8 +1006,65 @@ class BacktestEngine:
                             f.write(f"  エントリーゾーン: {entry_cond['entry_zone']}\n")
                         f.write("\n")
 
+                        # 時間別予測
+                        if 'hourly_predictions' in strategy:
+                            f.write("時間別予測:\n")
+                            hourly_pred = strategy['hourly_predictions']
+                            for time, pred in sorted(hourly_pred.items()):
+                                f.write(f"  {time}: {pred.get('bias', 'N/A')} - {pred.get('recommended_action', '')}\n")
+                                if 'predicted_range' in pred:
+                                    f.write(f"    予想レンジ: {pred['predicted_range'].get('min', 0):.2f}〜{pred['predicted_range'].get('max', 0):.2f}\n")
+                                if '注意点' in pred:
+                                    f.write(f"    注意点: {pred['注意点']}\n")
+                            f.write("\n")
+
+                        # トレードルール（詳細）
+                        if 'trading_rules' in strategy:
+                            f.write("─" * 50 + "\n")
+                            f.write("トレードルール（詳細）\n")
+                            f.write("─" * 50 + "\n")
+                            trading_rules = strategy['trading_rules']
+
+                            # エントリールール
+                            if 'entry_rules' in trading_rules:
+                                f.write("\n【エントリールール】\n")
+                                for rule_name, rule_desc in trading_rules['entry_rules'].items():
+                                    f.write(f"  {rule_name}: {rule_desc}\n")
+
+                            # ポジションサイジングルール
+                            if 'position_sizing_rules' in trading_rules:
+                                f.write("\n【ポジションサイジングルール】\n")
+                                for rule_name, rule_desc in trading_rules['position_sizing_rules'].items():
+                                    f.write(f"  {rule_name}: {rule_desc}\n")
+
+                            # 利確ルール
+                            if 'take_profit_rules' in trading_rules:
+                                f.write("\n【利確ルール】\n")
+                                for rule_name, rule_desc in trading_rules['take_profit_rules'].items():
+                                    f.write(f"  {rule_name}: {rule_desc}\n")
+
+                            # 損切りルール
+                            if 'stop_loss_rules' in trading_rules:
+                                f.write("\n【損切りルール】\n")
+                                for rule_name, rule_desc in trading_rules['stop_loss_rules'].items():
+                                    f.write(f"  {rule_name}: {rule_desc}\n")
+
+                            # インジケーター決済ルール
+                            if 'indicator_exit_rules' in trading_rules:
+                                f.write("\n【インジケーター決済ルール】\n")
+                                for rule_name, rule_desc in trading_rules['indicator_exit_rules'].items():
+                                    f.write(f"  {rule_name}: {rule_desc}\n")
+
+                            # 時間制約ルール
+                            if 'time_constraint_rules' in trading_rules:
+                                f.write("\n【時間制約ルール】\n")
+                                for rule_name, rule_desc in trading_rules['time_constraint_rules'].items():
+                                    f.write(f"  {rule_name}: {rule_desc}\n")
+
+                            f.write("\n")
+
                         # リスク管理JSON
-                        f.write("リスク管理ルール (JSON):\n")
+                        f.write("リスク管理パラメータ (JSON):\n")
                         f.write("```json\n")
                         import json
                         f.write(json.dumps(strategy.get('risk_management', {}), indent=2, ensure_ascii=False))
@@ -1027,6 +1084,18 @@ class BacktestEngine:
                             if market_assess:
                                 f.write("市場評価:\n")
                                 f.write(f"  {market_assess}\n\n")
+
+                            # 残り時間の予測
+                            if 'hourly_predictions_remaining' in update_data:
+                                f.write("残り時間の予測:\n")
+                                hourly_pred_rem = update_data['hourly_predictions_remaining']
+                                for time, pred in sorted(hourly_pred_rem.items()):
+                                    f.write(f"  {time}: {pred.get('bias', 'N/A')} - {pred.get('recommended_action', '')}\n")
+                                    if 'predicted_range' in pred:
+                                        f.write(f"    予想レンジ: {pred['predicted_range'].get('min', 0):.2f}〜{pred['predicted_range'].get('max', 0):.2f}\n")
+                                    if '注意点' in pred:
+                                        f.write(f"    注意点: {pred['注意点']}\n")
+                                f.write("\n")
 
                     # Phase 4: Layer 3a監視（ポジション保有時のみ）
                     if 'layer3a_monitoring' in report_data:
