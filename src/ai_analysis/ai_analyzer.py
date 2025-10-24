@@ -61,7 +61,7 @@ class AIAnalyzer:
     def __init__(self,
                  symbol: str = 'USDJPY',
                  data_dir: str = 'data/tick_data',
-                 model: str = 'flash',
+                 model: str = 'periodic_update',
                  backtest_start_date: Optional[str] = None,
                  backtest_end_date: Optional[str] = None):
         """
@@ -70,7 +70,10 @@ class AIAnalyzer:
         Args:
             symbol: 通貨ペア（デフォルト: USDJPY）
             data_dir: ティックデータディレクトリ
-            model: 使用するGeminiモデル ('pro'/'flash'/'flash-lite')
+            model: Phase名（'daily_analysis', 'periodic_update', 'position_monitor', 'emergency_evaluation'）
+                   または完全なモデル名（例: gemini-2.5-flash）
+                   注: 各Phaseメソッド呼び出し時に適切なモデルが自動選択されるため、
+                       このパラメータは主に後方互換性のために残されています
             backtest_start_date: バックテスト開始日 (YYYY-MM-DD), バックテストモード時のみ
             backtest_end_date: バックテスト終了日 (YYYY-MM-DD), バックテストモード時のみ
         """
@@ -568,10 +571,10 @@ class AIAnalyzer:
 
             self.logger.info("Calling Gemini Pro for daily review...")
 
-            # Gemini Pro呼び出し（温度・トークン数は.envから取得）
+            # Phase 1: デイリーレビュー用モデル（.envのMODEL_DAILY_ANALYSISから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                model='pro',  # Phase 1: デイリーレビュー
+                model='daily_analysis',
                 phase='Phase 1 (Daily Review)'
             )
 
@@ -732,10 +735,10 @@ class AIAnalyzer:
 
             self.logger.info("Calling Gemini Pro for morning analysis...")
 
-            # Gemini Pro呼び出し（温度・トークン数は.envから取得）
+            # Phase 2: 朝の詳細分析用モデル（.envのMODEL_DAILY_ANALYSISから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                model='pro',  # Phase 2: 朝の詳細分析
+                model='daily_analysis',
                 phase='Phase 2 (Morning Analysis)'
             )
 
@@ -978,10 +981,10 @@ class AIAnalyzer:
 
             self.logger.info(f"Calling Gemini Flash for periodic update ({update_time})...")
 
-            # Gemini Flash呼び出し（温度・トークン数は.envから取得）
+            # Phase 3: 定期更新用モデル（.envのMODEL_PERIODIC_UPDATEから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                model='flash',  # Phase 3: 定期更新
+                model='periodic_update',
                 phase='Phase 3 (Periodic Update)'
             )
 
@@ -1201,10 +1204,10 @@ class AIAnalyzer:
 
             self.logger.debug("Calling Gemini Flash-8B for Layer 3a monitoring...")
 
-            # Gemini Flash-8B呼び出し（温度・トークン数は.envから取得）
+            # Phase 4: Layer 3a監視用モデル（.envのMODEL_POSITION_MONITORから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                model='flash-8b',  # Phase 4: Layer 3a監視
+                model='position_monitor',
                 phase='Phase 4 (Layer 3a Monitor)'
             )
 
@@ -1387,10 +1390,10 @@ class AIAnalyzer:
 
             self.logger.warning("Calling Gemini Pro for Layer 3b emergency evaluation...")
 
-            # Gemini Pro呼び出し（温度・トークン数は.envから取得）
+            # Phase 5: Layer 3b緊急評価用モデル（.envのMODEL_EMERGENCY_EVALUATIONから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                model='pro',  # Phase 5: Layer 3b緊急評価
+                model='emergency_evaluation',
                 phase='Phase 5 (Layer 3b Emergency)'
             )
 
