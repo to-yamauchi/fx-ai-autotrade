@@ -236,6 +236,10 @@ class TradeSimulator:
         profit_sign = "+" if profit > 0 else ""
         pips_sign = "+" if pips > 0 else ""
 
+        # reasonがNoneまたは空の場合のデフォルト値
+        if not reason:
+            reason = "Manual close"
+
         # 決済理由の絵文字
         if "TP" in reason or "take_profit" in reason.lower():
             emoji = "✅"
@@ -245,7 +249,7 @@ class TradeSimulator:
             reason_short = "SL"
         else:
             emoji = "📉"
-            reason_short = reason[:10]
+            reason_short = reason[:10] if len(reason) > 10 else reason
 
         close_msg = (
             f"{emoji} 決済: #{ticket} | {position['action']} {position['volume']}ロット | "

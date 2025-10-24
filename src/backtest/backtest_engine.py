@@ -528,6 +528,18 @@ class BacktestEngine:
                 should_trade = strategy_result.get('entry_conditions', {}).get('should_trade', False)
 
             # 朝の戦略に基づいてトレード判断
+            # トレード実行前に市場価格を設定（その日の最初のティックを使用）
+            next_date = current_date + timedelta(days=1)
+            for tick in tick_data:
+                tick_time = tick['time']
+                if current_date <= tick_time.date() < next_date:
+                    # その日の最初のティックで市場価格を更新
+                    self.simulator.update_market_price(
+                        bid=tick['bid'],
+                        ask=tick['ask']
+                    )
+                    break
+
             current_time = datetime.combine(current_date, datetime.min.time())
             if strategy_result and should_trade:
                 self._execute_trade_from_strategy(strategy_result, current_time)
