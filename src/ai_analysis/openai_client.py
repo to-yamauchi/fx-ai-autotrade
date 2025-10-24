@@ -164,18 +164,32 @@ class OpenAIClient(BaseLLMClient):
                 ],
             }
 
-            if temperature is not None:
+            # GPT-5やo1シリーズかどうかを判定
+            is_new_model = actual_model.startswith(('gpt-5', 'o1-', 'o3-'))
+
+            # temperatureの設定（新モデルは非対応）
+            if temperature is not None and not is_new_model:
                 params["temperature"] = temperature
+
+            # max_tokensの設定（モデルによって使い分け）
             if max_tokens is not None:
-                params["max_tokens"] = max_tokens
+                if is_new_model:
+                    # GPT-5やo1シリーズは max_completion_tokens を使用
+                    params["max_completion_tokens"] = max_tokens
+                else:
+                    # 従来のGPT-4、GPT-3.5などは max_tokens を使用
+                    params["max_tokens"] = max_tokens
 
             # その他のパラメータをマージ（phase除外）
             phase = kwargs.pop('phase', 'Unknown')
             params.update(kwargs)
 
+            # ログ出力（実際に使用されるパラメータを表示）
+            token_param = "max_completion_tokens" if is_new_model else "max_tokens"
             self.logger.debug(
                 f"OpenAI API request: model={actual_model}, "
-                f"temperature={temperature}, max_tokens={max_tokens}"
+                f"temperature={temperature if not is_new_model else 'N/A'}, "
+                f"{token_param}={max_tokens}"
             )
 
             # API呼び出し（リトライ処理付き）
