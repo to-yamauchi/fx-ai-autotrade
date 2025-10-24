@@ -421,12 +421,18 @@ class OpenAIClient(BaseLLMClient):
             # モデルが指定されていない場合はデフォルト（最も安価）を使用
             test_model = model if model else "gpt-3.5-turbo"
 
+            # GPT-5の場合は最小トークン数が16なので、それを考慮
+            # Phase名の場合は実際のモデル名に変換して判定
+            actual_model = self._select_model(test_model)
+            is_gpt5 = actual_model.startswith('gpt-5')
+            test_max_tokens = 50 if is_gpt5 else 10
+
             # 簡単なテストプロンプトを送信
             test_prompt = "Hello, this is a connection test. Please respond with 'OK'."
             response = self.generate_response(
                 prompt=test_prompt,
                 model=test_model,
-                max_tokens=10,
+                max_tokens=test_max_tokens,
                 phase="Connection Test"  # レポートで識別できるようにphaseを設定
             )
 
