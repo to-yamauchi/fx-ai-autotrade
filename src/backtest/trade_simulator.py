@@ -160,9 +160,14 @@ class TradeSimulator:
 
         self.open_positions[ticket] = position
 
-        self.logger.info(
-            f"Position opened: ticket={ticket}, {action} {volume} lots @ {entry_price}"
+        # ログとコンソール出力
+        entry_msg = (
+            f"📈 エントリー: #{ticket} | {action} {volume}ロット @ {entry_price:.3f} | "
+            f"SL: {sl:.3f if sl else 'なし'} | TP: {tp:.3f if tp else 'なし'} | "
+            f"残高: {self.balance:,.0f}円"
         )
+        self.logger.info(f"Position opened: ticket={ticket}, {action} {volume} lots @ {entry_price}")
+        print(entry_msg)
 
         return ticket
 
@@ -219,10 +224,39 @@ class TradeSimulator:
         self.closed_positions.append(position)
         del self.open_positions[ticket]
 
+        # pips計算
+        if position['action'] == 'BUY':
+            pips = (close_price - position['entry_price']) * 100
+        else:  # SELL
+            pips = (position['entry_price'] - close_price) * 100
+
+        # ログとコンソール出力
+        profit_sign = "+" if profit > 0 else ""
+        pips_sign = "+" if pips > 0 else ""
+
+        # 決済理由の絵文字
+        if "TP" in reason or "take_profit" in reason.lower():
+            emoji = "✅"
+            reason_short = "TP"
+        elif "SL" in reason or "stop_loss" in reason.lower():
+            emoji = "❌"
+            reason_short = "SL"
+        else:
+            emoji = "📉"
+            reason_short = reason[:10]
+
+        close_msg = (
+            f"{emoji} 決済: #{ticket} | {position['action']} {position['volume']}ロット | "
+            f"エントリー: {position['entry_price']:.3f} → 決済: {close_price:.3f} | "
+            f"損益: {profit_sign}{profit:,.0f}円 ({pips_sign}{pips:.1f}pips) | "
+            f"理由: {reason_short} | 残高: {self.balance:,.0f}円"
+        )
+
         self.logger.info(
             f"Position closed: ticket={ticket}, "
-            f"profit={profit:.2f}, reason={reason}"
+            f"profit={profit:.2f}, pips={pips:.1f}, reason={reason}"
         )
+        print(close_msg)
 
         return position
 
