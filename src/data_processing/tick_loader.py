@@ -119,6 +119,61 @@ class TickDataLoader:
             self.logger.error(f"データベース接続エラー: {e}")
             raise
 
+    def _load_from_cache_range(self, symbol: str, start_date: datetime.date, end_date: datetime.date) -> List[Dict]:
+        """
+        データベースキャッシュから期間指定でティックデータを読み込む（高速版）
+
+        Args:
+            symbol (str): 通貨ペア
+            start_date (datetime.date): 開始日
+            end_date (datetime.date): 終了日
+
+        Returns:
+            List[Dict]: ティックデータのリスト
+        """
+        try:
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+
+            # 期間全体を1回のクエリで取得（高速）
+            cursor.execute(
+                """
+                SELECT timestamp, bid, ask, 0 as volume
+                FROM tick_data_cache
+                WHERE symbol = %s AND date >= %s AND date <= %s
+                ORDER BY timestamp
+                """,
+                (symbol, start_date, end_date)
+            )
+
+            tick_data = []
+            for row in cursor.fetchall():
+                # タイムスタンプをnaiveに変換（タイムゾーン情報を削除）
+                timestamp = row[0]
+                if hasattr(timestamp, 'tzinfo') and timestamp.tzinfo is not None:
+                    timestamp = timestamp.replace(tzinfo=None)
+
+                tick = {
+                    'timestamp': timestamp,
+                    'bid': float(row[1]),
+                    'ask': float(row[2]),
+                    'volume': row[3]
+                }
+                tick_data.append(tick)
+
+            cursor.close()
+            conn.close()
+
+            self.logger.debug(
+                f"キャッシュから期間読み込み完了: {len(tick_data)} 件 ({symbol} {start_date} ～ {end_date})"
+            )
+
+            return tick_data
+
+        except Exception as e:
+            self.logger.error(f"キャッシュ期間読み込みエラー: {e}")
+            raise
+
     def _check_cache_exists(self, symbol: str, date: datetime.date) -> bool:
         """
         指定された日付のキャッシュが存在するかチェック
@@ -501,73 +556,86 @@ class TickDataLoader:
             all_dates.append(current)
             current += timedelta(days=1)
 
-        # 各日のデータを読み込む（キャッシュ優先）
+        # 【高速化】まず期間全体のキャッシュデータを1回のクエリで取得
         all_tick_data = []
-        missing_files = []
         cache_hits = 0
         cache_misses = 0
-        months_loaded = set()  # 既に読み込んだ月を追跡
+        months_loaded = set()
 
-        for target_date in all_dates:
-            # キャッシュが存在するかチェック
-            if self.use_cache and self._check_cache_exists(symbol, target_date):
-                # キャッシュから読み込み
-                try:
-                    date_tick_data = self._load_from_cache(symbol, target_date)
-                    all_tick_data.extend(date_tick_data)
-                    cache_hits += 1
-                    continue
-                except Exception as e:
-                    # キャッシュ読み込み失敗時はZIPから読み込む
-                    self.logger.warning(
-                        f"キャッシュ読み込み失敗、ZIPから読み込みます: {e}"
-                    )
-
-            # キャッシュがない場合、その月のZIPファイルを読み込む
-            cache_misses += 1
-            year = target_date.year
-            month = target_date.month
-            month_key = (year, month)
-
-            # 既にこの月のZIPを読み込み済みならスキップ
-            if month_key in months_loaded:
-                continue
-
+        if self.use_cache:
             try:
-                # 月のzipファイルを読み込む
-                month_tick_data = self.load_from_zip(symbol, year, month)
-                months_loaded.add(month_key)
+                # 期間全体を1回のクエリで取得（高速）
+                all_tick_data = self._load_from_cache_range(symbol, start_date.date(), end_date.date())
 
-                # 日付別にグループ化してキャッシュに保存
-                if self.use_cache and month_tick_data:
-                    # 日付ごとにグループ化
-                    by_date = {}
-                    for tick in month_tick_data:
-                        tick_date = tick['timestamp'].date()
-                        if tick_date not in by_date:
-                            by_date[tick_date] = []
-                        by_date[tick_date].append(tick)
+                if all_tick_data:
+                    # 取得したデータから日付を抽出して、キャッシュヒット日数を計算
+                    cached_dates = set()
+                    for tick in all_tick_data:
+                        cached_dates.add(tick['timestamp'].date())
 
-                    # 日付ごとにキャッシュに保存
-                    for tick_date, date_ticks in by_date.items():
-                        if not self._check_cache_exists(symbol, tick_date):
-                            self._save_to_cache(symbol, tick_date, date_ticks)
+                    cache_hits = len(cached_dates & set(all_dates))
+                    cache_misses = len(all_dates) - cache_hits
 
-                    # この日のデータをall_tick_dataに追加
-                    if target_date in by_date:
-                        all_tick_data.extend(by_date[target_date])
-                else:
-                    # キャッシュ無効時は全データを追加
-                    all_tick_data.extend(month_tick_data)
-
-            except FileNotFoundError:
-                # ファイルが見つからない場合は記録して続行
-                if f"{year}-{month:02d}" not in missing_files:
-                    missing_files.append(f"{year}-{month:02d}")
-                    self.logger.warning(
-                        f"ファイルが見つかりません: {symbol} {year}-{month:02d} (スキップ)"
+                    self.logger.info(
+                        f"期間キャッシュ読み込み完了: {len(all_tick_data):,} 件, "
+                        f"キャッシュヒット: {cache_hits}/{len(all_dates)}日"
                     )
-                continue
+                else:
+                    # データが見つからない場合
+                    cache_misses = len(all_dates)
+                    raise Exception("キャッシュにデータがありません")
+
+            except Exception as e:
+                # キャッシュ読み込み失敗 - ZIPから読み込む
+                self.logger.warning(f"キャッシュ読み込み失敗: {e}")
+                all_tick_data = []
+                cache_misses = len(all_dates)
+
+        # キャッシュミスがある場合、ZIPファイルから読み込む
+        missing_files = []
+        if cache_misses > 0 and not all_tick_data:
+            # 必要な月のZIPファイルをすべて読み込む
+            for year, month in months_to_load:
+                month_key = (year, month)
+
+                # 既にこの月のZIPを読み込み済みならスキップ
+                if month_key in months_loaded:
+                    continue
+
+                try:
+                    # 月のzipファイルを読み込む
+                    month_tick_data = self.load_from_zip(symbol, year, month)
+                    months_loaded.add(month_key)
+
+                    # 日付別にグループ化してキャッシュに保存
+                    if self.use_cache and month_tick_data:
+                        # 日付ごとにグループ化
+                        by_date = {}
+                        for tick in month_tick_data:
+                            tick_date = tick['timestamp'].date()
+                            if tick_date not in by_date:
+                                by_date[tick_date] = []
+                            by_date[tick_date].append(tick)
+
+                        # 日付ごとにキャッシュに保存
+                        for tick_date, date_ticks in by_date.items():
+                            # 対象期間内の日付のみキャッシュに保存
+                            if start_date.date() <= tick_date <= end_date.date():
+                                self._save_to_cache(symbol, tick_date, date_ticks)
+
+                    # 期間内のデータのみ追加
+                    for tick in month_tick_data:
+                        if start_date.date() <= tick['timestamp'].date() <= end_date.date():
+                            all_tick_data.append(tick)
+
+                except FileNotFoundError:
+                    # ファイルが見つからない場合は記録して続行
+                    if f"{year}-{month:02d}" not in missing_files:
+                        missing_files.append(f"{year}-{month:02d}")
+                        self.logger.warning(
+                            f"ファイルが見つかりません: {symbol} {year}-{month:02d} (スキップ)"
+                        )
+                    continue
 
         # キャッシュ使用状況を保存・ログ出力
         if self.use_cache:
