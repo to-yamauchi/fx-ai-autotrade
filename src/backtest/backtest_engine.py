@@ -141,8 +141,8 @@ class BacktestEngine:
 
                 # Phase別のLLMクライアントを生成・接続テスト
                 print("")
-                print("🤖 LLM API接続テスト:")
-                print("=" * 60)
+                print("🤖 使用モデル構成:")
+                print("=" * 80)
 
                 phase_clients = create_phase_clients()
 
@@ -152,27 +152,28 @@ class BacktestEngine:
                     provider = client.get_provider_name()
                     if phase_name == 'daily_analysis':
                         model = config.model_daily_analysis
-                        label = "Phase 1,2   (デイリー分析)"
+                        label = "Phase 1,2 (デイリー分析)"
                     elif phase_name == 'periodic_update':
                         model = config.model_periodic_update
-                        label = "Phase 3     (定期更新)"
+                        label = "Phase 3   (定期更新)"
                     elif phase_name == 'position_monitor':
                         model = config.model_position_monitor
-                        label = "Phase 4     (ポジション監視)"
+                        label = "Phase 4   (ポジション監視)"
                     else:  # emergency_evaluation
                         model = config.model_emergency_evaluation
-                        label = "Phase 5     (緊急評価)"
+                        label = "Phase 5   (緊急評価)"
 
-                    print(f"{label}: {model}")
-                    print(f"  Provider: {provider.upper()}", end=' ')
+                    # 接続テスト（verboseなし、結果のみ表示）
+                    connection_ok = client.test_connection(verbose=False)
+                    status = "✓" if connection_ok else "❌"
 
-                    if not client.test_connection(verbose=False):
-                        print(" ❌ 接続失敗")
+                    # 1行で表示: Phase名 - モデル名 [プロバイダー] ステータス
+                    print(f"{label:<25} {model:<35} [{provider.upper():<10}] {status}")
+
+                    if not connection_ok:
                         all_connected = False
-                    else:
-                        print(" ✓ 接続成功")
 
-                print("=" * 60)
+                print("=" * 80)
 
                 if not all_connected:
                     print("")
