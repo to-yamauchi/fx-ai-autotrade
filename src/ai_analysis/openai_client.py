@@ -98,7 +98,8 @@ class OpenAIClient(BaseLLMClient):
             if max_tokens is not None:
                 params["max_tokens"] = max_tokens
 
-            # その他のパラメータをマージ
+            # その他のパラメータをマージ（phase除外）
+            phase = kwargs.pop('phase', 'Unknown')
             params.update(kwargs)
 
             self.logger.debug(
@@ -134,6 +135,18 @@ class OpenAIClient(BaseLLMClient):
                 f"finish_reason={finish_reason}, "
                 f"length={len(text)} chars"
             )
+
+            # トークン使用量を記録
+            if hasattr(response, 'usage'):
+                from src.ai_analysis.token_usage_tracker import get_token_tracker
+                tracker = get_token_tracker()
+                tracker.record_usage(
+                    phase=phase,
+                    provider='openai',
+                    model=model,
+                    input_tokens=response.usage.prompt_tokens,
+                    output_tokens=response.usage.completion_tokens
+                )
 
             return text
 

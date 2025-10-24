@@ -138,7 +138,8 @@ class GeminiClient(BaseLLMClient):
         prompt: str,
         model: str = 'flash',
         temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
+        **kwargs
     ) -> str:
         """
         汎用的なプロンプトに対してAI応答を生成する
@@ -214,6 +215,20 @@ class GeminiClient(BaseLLMClient):
                     error_msg = f"AI応答が生成されませんでした。finish_reason: {finish_reason}"
                     self.logger.error(f"❌ {error_msg}")
                     raise ValueError(error_msg)
+
+            # トークン使用量を記録
+            if hasattr(response, 'usage_metadata'):
+                from src.ai_analysis.token_usage_tracker import get_token_tracker
+                tracker = get_token_tracker()
+                input_tokens = response.usage_metadata.prompt_token_count
+                output_tokens = response.usage_metadata.candidates_token_count
+                tracker.record_usage(
+                    phase=kwargs.get('phase', 'Unknown'),
+                    provider='gemini',
+                    model=model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens
+                )
 
             return response.text
 

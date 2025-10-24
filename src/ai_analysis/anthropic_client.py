@@ -97,7 +97,8 @@ class AnthropicClient(BaseLLMClient):
             if temperature is not None:
                 params["temperature"] = temperature
 
-            # その他のパラメータをマージ
+            # その他のパラメータをマージ（phase除外）
+            phase = kwargs.pop('phase', 'Unknown')
             params.update(kwargs)
 
             self.logger.debug(
@@ -135,6 +136,18 @@ class AnthropicClient(BaseLLMClient):
                 f"stop_reason={stop_reason}, "
                 f"length={len(text)} chars"
             )
+
+            # トークン使用量を記録
+            if hasattr(response, 'usage'):
+                from src.ai_analysis.token_usage_tracker import get_token_tracker
+                tracker = get_token_tracker()
+                tracker.record_usage(
+                    phase=phase,
+                    provider='anthropic',
+                    model=model,
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens
+                )
 
             return text
 
