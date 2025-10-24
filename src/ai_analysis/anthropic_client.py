@@ -160,7 +160,7 @@ class AnthropicClient(BaseLLMClient):
             test_prompt = "Hello, this is a connection test. Please respond with 'OK'."
             response = self.generate_response(
                 prompt=test_prompt,
-                model="claude-haiku-4",  # 最も安価で高速なモデルでテスト
+                model="claude-3-5-haiku-20241022",  # 最も安価で高速なモデルでテスト
                 max_tokens=10
             )
 
