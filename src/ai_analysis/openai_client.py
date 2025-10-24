@@ -11,14 +11,16 @@ OpenAI ChatGPT APIを使用してLLMレスポンスを生成するクライア�
 BaseLLMClientを継承し、統一インターフェースを実装します。
 
 【対応モデル】
-- gpt-4o
-- gpt-4o-mini
-- gpt-4-turbo
-- gpt-3.5-turbo
-- o1-preview
-- o1-mini
+- GPT-5シリーズ: gpt-5-nano, gpt-5-mini (Responses API)
+- GPT-4シリーズ: gpt-4o, gpt-4o-mini, gpt-4-turbo (Chat Completions API)
+- GPT-3.5シリーズ: gpt-3.5-turbo (Chat Completions API)
+- o1シリーズ: o1-preview, o1-mini (Chat Completions API)
 
 最新のモデル一覧: https://platform.openai.com/docs/models
+
+【API種別】
+- GPT-5: Responses API (client.responses.create)
+- GPT-4/3.5/o1: Chat Completions API (client.chat.completions.create)
 
 【使用例】
 ```python
@@ -104,7 +106,7 @@ class OpenAIClient(BaseLLMClient):
             model_name = model
 
         # モデル名のバリデーション - OpenAIClient はOpenAIモデルのみ対応
-        if not model_name.startswith(('gpt-', 'o1-', 'chatgpt-')):
+        if not model_name.startswith(('gpt-', 'o1-', 'o3-', 'chatgpt-')):
             # OpenAI以外のモデルが指定された場合
             provider_hint = "Unknown"
             if model_name.startswith('gemini-'):
@@ -114,12 +116,11 @@ class OpenAIClient(BaseLLMClient):
 
             raise ValueError(
                 f"OpenAIClient cannot use non-OpenAI model: '{model_name}' ({provider_hint})\n"
-                f"Please configure an OpenAI model (gpt-*, o1-*, chatgpt-*) in your .env file.\n"
+                f"Please configure an OpenAI model (gpt-*, o1-*, o3-*, chatgpt-*) in your .env file.\n"
                 f"Example OpenAI models:\n"
-                f"  - gpt-4o\n"
-                f"  - gpt-4o-mini\n"
-                f"  - gpt-5-nano\n"
-                f"  - o1-preview\n"
+                f"  - gpt-5-nano, gpt-5-mini (Responses API)\n"
+                f"  - gpt-4o, gpt-4o-mini (Chat Completions API)\n"
+                f"  - o1-preview, o1-mini (Chat Completions API)\n"
                 f"\n"
                 f"If you want to use {provider_hint} models, configure them in MODEL_* variables\n"
                 f"and the system will automatically select the appropriate client."
@@ -156,40 +157,18 @@ class OpenAIClient(BaseLLMClient):
             # Phase名を実際のモデル名に変換
             actual_model = self._select_model(model)
 
-            # パラメータ設定
-            params = {
-                "model": actual_model,
-                "messages": [
-                    {"role": "user", "content": prompt}
-                ],
-            }
-
-            # GPT-5やo1シリーズかどうかを判定
-            is_new_model = actual_model.startswith(('gpt-5', 'o1-', 'o3-'))
-
-            # temperatureの設定（新モデルは非対応）
-            if temperature is not None and not is_new_model:
-                params["temperature"] = temperature
-
-            # max_tokensの設定（モデルによって使い分け）
-            if max_tokens is not None:
-                if is_new_model:
-                    # GPT-5やo1シリーズは max_completion_tokens を使用
-                    params["max_completion_tokens"] = max_tokens
-                else:
-                    # 従来のGPT-4、GPT-3.5などは max_tokens を使用
-                    params["max_tokens"] = max_tokens
-
-            # その他のパラメータをマージ（phase除外）
+            # phaseパラメータを取得（トークン使用量記録用）
             phase = kwargs.pop('phase', 'Unknown')
-            params.update(kwargs)
 
-            # ログ出力（実際に使用されるパラメータを表示）
-            token_param = "max_completion_tokens" if is_new_model else "max_tokens"
+            # GPT-5は Responses API、それ以外は Chat Completions API
+            is_gpt5 = actual_model.startswith('gpt-5')
+
+            # ログ出力
+            api_type = "Responses API" if is_gpt5 else "Chat Completions API"
             self.logger.debug(
-                f"OpenAI API request: model={actual_model}, "
-                f"temperature={temperature if not is_new_model else 'N/A'}, "
-                f"{token_param}={max_tokens}"
+                f"OpenAI {api_type} request: model={actual_model}, "
+                f"temperature={temperature if not is_gpt5 else 'N/A'}, "
+                f"max_tokens={max_tokens}"
             )
 
             # API呼び出し（リトライ処理付き）
@@ -198,7 +177,23 @@ class OpenAIClient(BaseLLMClient):
 
             for attempt in range(max_retries):
                 try:
-                    response = self.client.chat.completions.create(**params)
+                    if is_gpt5:
+                        # GPT-5: Responses API
+                        response = self._call_responses_api(
+                            model=actual_model,
+                            prompt=prompt,
+                            max_tokens=max_tokens,
+                            **kwargs
+                        )
+                    else:
+                        # GPT-4/3.5/o1: Chat Completions API
+                        response = self._call_chat_completions_api(
+                            model=actual_model,
+                            prompt=prompt,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                            **kwargs
+                        )
                     break  # 成功したらループを抜ける
 
                 except (InternalServerError, RateLimitError) as e:
@@ -215,30 +210,10 @@ class OpenAIClient(BaseLLMClient):
                         raise
 
             # レスポンスからテキストを取得
-            if not response.choices:
-                raise ValueError("OpenAI API returned no choices")
-
-            text = response.choices[0].message.content
-
-            # finish_reasonをチェック
-            finish_reason = response.choices[0].finish_reason
-            if finish_reason == "length":
-                self.logger.warning(
-                    f"Response was truncated due to max_tokens limit. "
-                    f"Current max_tokens: {max_tokens}. "
-                    f"Consider increasing max_tokens in .env"
-                )
-            elif finish_reason == "content_filter":
-                raise ValueError(
-                    "Response was filtered by OpenAI content policy. "
-                    "Please modify your prompt."
-                )
-
-            self.logger.debug(
-                f"OpenAI API response received: "
-                f"finish_reason={finish_reason}, "
-                f"length={len(text)} chars"
-            )
+            if is_gpt5:
+                text = self._extract_text_from_responses_api(response)
+            else:
+                text = self._extract_text_from_chat_completions_api(response, max_tokens)
 
             # トークン使用量を記録
             if hasattr(response, 'usage'):
@@ -248,8 +223,8 @@ class OpenAIClient(BaseLLMClient):
                     phase=phase,
                     provider='openai',
                     model=actual_model,
-                    input_tokens=response.usage.prompt_tokens,
-                    output_tokens=response.usage.completion_tokens
+                    input_tokens=response.usage.prompt_tokens if hasattr(response.usage, 'prompt_tokens') else 0,
+                    output_tokens=response.usage.completion_tokens if hasattr(response.usage, 'completion_tokens') else 0
                 )
 
             return text
@@ -257,6 +232,178 @@ class OpenAIClient(BaseLLMClient):
         except Exception as e:
             self.logger.error(f"OpenAI API error: {e}")
             raise
+
+    def _call_chat_completions_api(
+        self,
+        model: str,
+        prompt: str,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ):
+        """
+        Chat Completions APIを呼び出す（GPT-4/3.5/o1用）
+
+        Args:
+            model: モデル名
+            prompt: プロンプトテキスト
+            temperature: 温度パラメータ
+            max_tokens: 最大トークン数
+            **kwargs: その他のパラメータ
+
+        Returns:
+            ChatCompletion: APIレスポンス
+        """
+        params = {
+            "model": model,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+        }
+
+        # o1シリーズかどうかを判定
+        is_o1_model = model.startswith(('o1-', 'o3-'))
+
+        # temperatureの設定（o1シリーズは非対応）
+        if temperature is not None and not is_o1_model:
+            params["temperature"] = temperature
+
+        # max_tokensの設定（モデルによって使い分け）
+        if max_tokens is not None:
+            if is_o1_model:
+                # o1シリーズは max_completion_tokens を使用
+                params["max_completion_tokens"] = max_tokens
+            else:
+                # GPT-4、GPT-3.5などは max_tokens を使用
+                params["max_tokens"] = max_tokens
+
+        # その他のパラメータをマージ
+        params.update(kwargs)
+
+        return self.client.chat.completions.create(**params)
+
+    def _call_responses_api(
+        self,
+        model: str,
+        prompt: str,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ):
+        """
+        Responses APIを呼び出す（GPT-5用）
+
+        Args:
+            model: モデル名
+            prompt: プロンプトテキスト
+            max_tokens: 最大トークン数
+            **kwargs: その他のパラメータ
+
+        Returns:
+            Response: APIレスポンス
+        """
+        params = {
+            "model": model,
+            "input": [
+                {"type": "message", "role": "user", "content": prompt}
+            ],
+            "text": {
+                "format": {"type": "text"},
+                "verbosity": "medium"
+            },
+            "reasoning": {
+                "effort": "medium",
+                "summary": "auto"
+            }
+        }
+
+        # max_tokensがある場合は設定
+        if max_tokens is not None:
+            if "text" not in params:
+                params["text"] = {}
+            params["text"]["max_output_tokens"] = max_tokens
+
+        # その他のパラメータをマージ
+        params.update(kwargs)
+
+        return self.client.responses.create(**params)
+
+    def _extract_text_from_chat_completions_api(self, response, max_tokens: Optional[int]) -> str:
+        """
+        Chat Completions APIのレスポンスからテキストを抽出
+
+        Args:
+            response: APIレスポンス
+            max_tokens: max_tokens設定値
+
+        Returns:
+            str: 抽出されたテキスト
+
+        Raises:
+            ValueError: レスポンスが空または異常な場合
+        """
+        if not response.choices:
+            raise ValueError("OpenAI API returned no choices")
+
+        text = response.choices[0].message.content
+
+        # finish_reasonをチェック
+        finish_reason = response.choices[0].finish_reason
+        if finish_reason == "length":
+            self.logger.warning(
+                f"Response was truncated due to max_tokens limit. "
+                f"Current max_tokens: {max_tokens}. "
+                f"Consider increasing max_tokens in .env"
+            )
+        elif finish_reason == "content_filter":
+            raise ValueError(
+                "Response was filtered by OpenAI content policy. "
+                "Please modify your prompt."
+            )
+
+        self.logger.debug(
+            f"OpenAI API response received: "
+            f"finish_reason={finish_reason}, "
+            f"length={len(text)} chars"
+        )
+
+        return text
+
+    def _extract_text_from_responses_api(self, response) -> str:
+        """
+        Responses APIのレスポンスからテキストを抽出
+
+        Args:
+            response: APIレスポンス
+
+        Returns:
+            str: 抽出されたテキスト
+
+        Raises:
+            ValueError: レスポンスが空または異常な場合
+        """
+        # GPT-5 Responses APIのレスポンス構造:
+        # response.output[0].content[0].text
+        if not hasattr(response, 'output') or not response.output:
+            raise ValueError("OpenAI Responses API returned no output")
+
+        output_item = response.output[0]
+
+        # textを取得
+        if hasattr(output_item, 'content') and output_item.content:
+            # content[0].text形式
+            text = output_item.content[0].text
+        elif hasattr(output_item, 'text'):
+            # 直接text属性がある場合
+            text = output_item.text
+        else:
+            raise ValueError("OpenAI Responses API returned unexpected format")
+
+        self.logger.debug(
+            f"OpenAI Responses API response received: "
+            f"length={len(text)} chars"
+        )
+
+        return text
 
     def test_connection(self, verbose: bool = False, model: Optional[str] = None) -> bool:
         """

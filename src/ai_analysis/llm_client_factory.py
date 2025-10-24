@@ -12,7 +12,7 @@ LLMクライアントファクトリー
 
 【対応プロバイダー】
 - Google Gemini: gemini-* モデル
-- OpenAI ChatGPT: gpt-*, chatgpt-*, o1-* モデル
+- OpenAI: gpt-*, chatgpt-*, o1-*, o3-* モデル (GPT-5/4/3.5/o1シリーズ)
 - Anthropic Claude: claude-* モデル
 
 【使用例】
@@ -54,7 +54,7 @@ def detect_provider_from_model(model_name: str) -> str:
 
     if model_lower.startswith('gemini-'):
         return 'gemini'
-    elif model_lower.startswith(('gpt-', 'chatgpt-', 'o1-')):
+    elif model_lower.startswith(('gpt-', 'chatgpt-', 'o1-', 'o3-')):
         return 'openai'
     elif model_lower.startswith('claude-'):
         return 'anthropic'
@@ -63,7 +63,7 @@ def detect_provider_from_model(model_name: str) -> str:
             f"未対応のモデル名: {model_name}\n"
             "対応プロバイダー:\n"
             "  - Gemini: gemini-*\n"
-            "  - OpenAI: gpt-*, chatgpt-*, o1-*\n"
+            "  - OpenAI: gpt-*, chatgpt-*, o1-*, o3-*\n"
             "  - Anthropic: claude-*"
         )
 
