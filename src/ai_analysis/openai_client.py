@@ -380,14 +380,38 @@ class OpenAIClient(BaseLLMClient):
             ValueError: レスポンスが空または異常な場合
         """
         # デバッグ: レスポンスの詳細情報を確認
-        self.logger.debug(f"Response status: {response.status if hasattr(response, 'status') else 'N/A'}")
-        self.logger.debug(f"Response output length: {len(response.output) if hasattr(response, 'output') else 0}")
+        status = response.status if hasattr(response, 'status') else 'N/A'
+        self.logger.debug(f"Response status: {status}")
+        self.logger.debug(f"Response output length: {len(response.output) if hasattr(response, 'output') and response.output else 0}")
+
+        # GPT-5は非同期で実行される可能性があるため、完了を待つ
+        if status in ['in_progress', 'queued']:
+            self.logger.info(f"Response status is '{status}', waiting for completion...")
+            max_wait_attempts = 30  # 最大30回（30秒）待機
+            wait_interval = 1  # 1秒間隔
+
+            for attempt in range(max_wait_attempts):
+                time.sleep(wait_interval)
+                # レスポンスIDを使って最新の状態を取得
+                response = self.client.responses.retrieve(response.id)
+                status = response.status if hasattr(response, 'status') else 'N/A'
+                self.logger.debug(f"Response status (attempt {attempt + 1}): {status}")
+
+                if status == 'completed':
+                    self.logger.info(f"Response completed after {attempt + 1} seconds")
+                    break
+                elif status in ['failed', 'cancelled', 'incomplete']:
+                    self.logger.error(f"Response ended with status: {status}")
+                    break
+
+            if status != 'completed':
+                raise ValueError(f"Response did not complete. Final status: {status}")
 
         # output配列の内容を確認
         if hasattr(response, 'output') and response.output:
             for i, output_item in enumerate(response.output):
                 self.logger.debug(f"Output[{i}] type: {output_item.type if hasattr(output_item, 'type') else 'N/A'}")
-                if hasattr(output_item, 'content'):
+                if hasattr(output_item, 'content') and output_item.content:
                     self.logger.debug(f"Output[{i}] content length: {len(output_item.content)}")
                     for j, content_item in enumerate(output_item.content):
                         content_type = content_item.type if hasattr(content_item, 'type') else 'N/A'
