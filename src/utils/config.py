@@ -228,10 +228,11 @@ def load_config() -> Config:
         anthropic_api_key=_get_env_str('ANTHROPIC_API_KEY', ''),
 
         # LLM Models（新環境変数、後方互換性あり）
-        model_daily_analysis=_get_env_str('MODEL_DAILY_ANALYSIS', '') or _get_env_str('GEMINI_MODEL_DAILY_ANALYSIS', 'gemini-2.5-flash'),
-        model_periodic_update=_get_env_str('MODEL_PERIODIC_UPDATE', '') or _get_env_str('GEMINI_MODEL_PERIODIC_UPDATE', 'gemini-2.5-flash'),
-        model_position_monitor=_get_env_str('MODEL_POSITION_MONITOR', '') or _get_env_str('GEMINI_MODEL_POSITION_MONITOR', 'gemini-2.5-flash'),
-        model_emergency_evaluation=_get_env_str('MODEL_EMERGENCY_EVALUATION', 'gemini-2.5-pro'),
+        # 注: .envファイルで必ず設定してください。デフォルト値は提供しません。
+        model_daily_analysis=_get_env_str('MODEL_DAILY_ANALYSIS', '') or _get_env_str('GEMINI_MODEL_DAILY_ANALYSIS', ''),
+        model_periodic_update=_get_env_str('MODEL_PERIODIC_UPDATE', '') or _get_env_str('GEMINI_MODEL_PERIODIC_UPDATE', ''),
+        model_position_monitor=_get_env_str('MODEL_POSITION_MONITOR', '') or _get_env_str('GEMINI_MODEL_POSITION_MONITOR', ''),
+        model_emergency_evaluation=_get_env_str('MODEL_EMERGENCY_EVALUATION', ''),
 
         # 後方互換性のため保持（非推奨）
         gemini_model_daily_analysis=_get_env_optional_str('GEMINI_MODEL_DAILY_ANALYSIS'),

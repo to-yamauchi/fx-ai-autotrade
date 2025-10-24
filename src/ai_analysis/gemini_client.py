@@ -315,28 +315,40 @@ class GeminiClient(BaseLLMClient):
         Args:
             model: モデル名（完全なモデル名 例: gemini-2.5-flash）
                 または短縮名（後方互換性のため）:
-                - 'pro' or 'daily_analysis': gemini-2.5-pro相当
-                - 'flash' or 'periodic_update': gemini-2.5-flash相当
-                - 'flash-lite', 'flash-8b' or 'position_monitor': gemini-2.5-flash相当
+                - 'daily_analysis': MODEL_DAILY_ANALYSISの値を使用
+                - 'periodic_update': MODEL_PERIODIC_UPDATEの値を使用
+                - 'position_monitor': MODEL_POSITION_MONITORの値を使用
+                - 'emergency_evaluation': MODEL_EMERGENCY_EVALUATIONの値を使用
 
         Returns:
             Tuple[GenerativeModel, str]: (選択されたGenerativeModelオブジェクト, 実際のモデル名)
         """
-        # 短縮名から完全なモデル名へのマッピング（後方互換性）
-        model_name_mapping = {
-            'pro': 'gemini-2.5-pro',
-            'daily_analysis': 'gemini-2.5-pro',
-            'flash': 'gemini-2.5-flash',
-            'periodic_update': 'gemini-2.5-flash',
-            'flash-lite': 'gemini-2.5-flash',
-            'flash-8b': 'gemini-2.5-flash',
-            'position_monitor': 'gemini-2.5-flash',
+        from src.utils.config import get_config
+        config = get_config()
+
+        # 短縮名から.env設定へのマッピング（後方互換性）
+        # 注: .envファイルで適切なモデル名を設定してください
+        phase_to_config_mapping = {
+            'daily_analysis': config.model_daily_analysis,
+            'periodic_update': config.model_periodic_update,
+            'position_monitor': config.model_position_monitor,
+            'emergency_evaluation': config.model_emergency_evaluation,
+            # 古い短縮名（非推奨、後方互換性のみ）
+            'pro': config.model_daily_analysis,
+            'flash': config.model_periodic_update,
+            'flash-8b': config.model_position_monitor,
+            'flash-lite': config.model_position_monitor,
         }
 
-        # 短縮名の場合は完全なモデル名に変換
-        if model in model_name_mapping:
-            model_name = model_name_mapping[model]
-            self.logger.debug(f"Model shorthand '{model}' mapped to '{model_name}'")
+        # 短縮名の場合は.envから設定を取得
+        if model in phase_to_config_mapping:
+            model_name = phase_to_config_mapping[model]
+            if not model_name:
+                raise ValueError(
+                    f"Model for phase '{model}' is not configured in .env file. "
+                    f"Please set the appropriate MODEL_* environment variable."
+                )
+            self.logger.debug(f"Model phase '{model}' mapped to '{model_name}' from .env configuration")
         else:
             # すでに完全なモデル名（例: gemini-2.5-flash, claude-sonnet-4-5など）
             model_name = model

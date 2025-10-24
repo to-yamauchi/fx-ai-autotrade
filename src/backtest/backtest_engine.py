@@ -1447,7 +1447,7 @@ class BacktestEngine:
 
             analyzer = AIAnalyzer(
                 symbol=self.symbol,
-                model='flash-8b',  # Flash-8B使用
+                model='position_monitor',  # .envのMODEL_POSITION_MONITORから取得
                 backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
                 backtest_end_date=self.end_date.strftime('%Y-%m-%d')
             )
@@ -1764,7 +1764,6 @@ class BacktestEngine:
                 'reasoning': strategy.get('reasoning', '朝の戦略に基づくエントリー'),
                 'symbol': self.symbol,
                 'timestamp': timestamp.isoformat(),
-                'model': 'pro',
                 'entry_conditions': entry_conditions,
                 'exit_strategy': strategy.get('exit_strategy', {}),
                 'risk_management': strategy.get('risk_management', {})
