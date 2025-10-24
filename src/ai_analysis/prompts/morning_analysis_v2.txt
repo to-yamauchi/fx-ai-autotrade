@@ -1,0 +1,235 @@
+あなたはプロのFXスキャルピングトレーダーです。以下の市場データを分析し、本日のUSDJPY自動トレード用の**構造化ルール**を生成してください。
+
+## 重要: 自然言語ではなく、プログラムが直接解釈できる構造化データを出力
+
+## 市場データ
+
+{market_data_json}
+
+## 前日の振り返り
+
+{review_json}
+
+## 過去5日の統計
+
+{past_statistics_json}
+
+## トレーディングスタイル（スキャルピング重視）
+
+- **目標**: 10-30pipsの小さな利益を積極的に狙う
+- **M15（15分足）を最重視**: エントリータイミングはM15を中心に判断
+- **積極的な姿勢**: レンジ相場でも反発・押し目を狙う
+- **確信度50-85**: 完璧な状況を待たず、積極的にエントリー
+
+## 出力フォーマット（構造化JSON）
+
+以下のJSON形式で出力してください。**プログラムが直接解釈できる形式**です。
+
+```json
+{
+  "version": "2.0",
+  "generated_at": "2025-01-15T08:00:00Z",
+  "valid_until": "2025-01-15T09:00:00Z",
+
+  "daily_bias": "BUY",
+  "confidence": 0.75,
+  "reasoning": "H1足でEMA20>EMA50の強気配列が継続。RSI 45と中立圏だが、MACDがゴールデンクロス間近。149.50のサポートが機能しており、ここからの反発狙い。",
+
+  "market_environment": {
+    "trend": "短期反発の可能性（日足は下降トレンド中）",
+    "strength": "中程度",
+    "phase": "サポート付近での反発初期"
+  },
+
+  "entry_conditions": {
+    "should_trade": true,
+    "direction": "BUY",
+    "price_zone": {
+      "min": 149.50,
+      "max": 149.65
+    },
+    "indicators": {
+      "rsi": {
+        "timeframe": "M15",
+        "min": 50,
+        "max": 70
+      },
+      "ema": {
+        "timeframe": "M15",
+        "condition": "price_above",
+        "period": 20
+      },
+      "macd": {
+        "timeframe": "M15",
+        "condition": "histogram_positive"
+      }
+    },
+    "spread": {
+      "max_pips": 10
+    },
+    "time_filter": {
+      "avoid_times": [
+        {"start": "09:50", "end": "10:00", "reason": "Tokyo fixing"},
+        {"start": "16:50", "end": "17:00", "reason": "London fixing"}
+      ]
+    }
+  },
+
+  "exit_strategy": {
+    "take_profit": [
+      {"pips": 10, "close_percent": 30},
+      {"pips": 20, "close_percent": 40},
+      {"pips": 30, "close_percent": 100}
+    ],
+    "stop_loss": {
+      "initial_pips": 15,
+      "price_level": 149.40,
+      "trailing": {
+        "activate_at_pips": 15,
+        "trail_distance_pips": 10
+      }
+    },
+    "indicator_exits": [
+      {
+        "type": "macd_cross",
+        "timeframe": "M15",
+        "direction": "bearish",
+        "action": "close_50"
+      },
+      {
+        "type": "ema_break",
+        "timeframe": "M15",
+        "period": 20,
+        "direction": "below",
+        "consecutive_candles": 2,
+        "action": "close_all"
+      },
+      {
+        "type": "rsi_threshold",
+        "timeframe": "M15",
+        "threshold": 70,
+        "direction": "above",
+        "action": "close_50"
+      }
+    ],
+    "time_exits": {
+      "max_hold_minutes": 240,
+      "force_close_time": "23:00"
+    }
+  },
+
+  "risk_management": {
+    "position_size_multiplier": 0.8,
+    "max_positions": 1,
+    "max_risk_per_trade_percent": 2.0,
+    "max_total_exposure_percent": 4.0
+  },
+
+  "key_levels": {
+    "entry_target": 149.55,
+    "invalidation_level": 149.40,
+    "support_levels": [149.50, 149.30, 149.00],
+    "resistance_levels": [149.70, 149.90, 150.00]
+  },
+
+  "hourly_predictions": {
+    "09:00": {
+      "predicted_range": {"min": 149.40, "max": 149.60},
+      "bias": "NEUTRAL",
+      "volatility_expected": "low"
+    },
+    "12:00": {
+      "predicted_range": {"min": 149.45, "max": 149.70},
+      "bias": "BUY",
+      "volatility_expected": "medium"
+    },
+    "15:00": {
+      "predicted_range": {"min": 149.55, "max": 149.80},
+      "bias": "BUY",
+      "volatility_expected": "high"
+    },
+    "18:00": {
+      "predicted_range": {"min": 149.60, "max": 149.90},
+      "bias": "BUY",
+      "volatility_expected": "high"
+    },
+    "21:00": {
+      "predicted_range": {"min": 149.50, "max": 149.85},
+      "bias": "NEUTRAL",
+      "volatility_expected": "very_high"
+    }
+  },
+
+  "lessons_applied": [
+    "昨日の教訓: レンジ時の早期利確 → 今日: +10pipsで30%決済",
+    "昨日の成功: EMAクロス後のエントリー → 今日: EMA条件を明記",
+    "昨日の失敗: 東京時間の早期エントリー → 今日: time_filterで回避"
+  ]
+}
+```
+
+## 各フィールドの説明
+
+### entry_conditions.indicators.rsi
+- `timeframe`: インジケーターの時間足（"M15", "H1", "H4", "D1"）
+- `min`: RSIの最小値（この値以上）
+- `max`: RSIの最大値（この値以下）
+
+### entry_conditions.indicators.ema
+- `timeframe`: インジケーターの時間足
+- `condition`: 条件（"price_above", "price_below", "cross_above", "cross_below"）
+- `period`: EMA期間（例: 20, 50）
+
+### entry_conditions.indicators.macd
+- `timeframe`: インジケーターの時間足
+- `condition`: 条件（"histogram_positive", "histogram_negative", "signal_cross_above", "signal_cross_below"）
+
+### exit_strategy.indicator_exits[]
+- `type`: 決済条件タイプ（"macd_cross", "ema_break", "rsi_threshold"）
+- `timeframe`: 判定する時間足
+- `action`: 決済アクション（"close_50"=50%決済, "close_all"=全決済, "close_75"=75%決済）
+- その他type別の必須パラメータ
+
+### hourly_predictions
+- `bias`: その時間帯のバイアス（"BUY", "SELL", "NEUTRAL"）
+- `volatility_expected`: 予想ボラティリティ（"very_low", "low", "medium", "high", "very_high"）
+
+## 重要な制約
+
+1. **全て構造化データ**: 自然言語の説明は `reasoning` と `lessons_applied` のみ
+2. **数値で指定**: RSI、EMA、MACD等は具体的な数値・列挙型で指定
+3. **プログラム解釈可能**: すべてのパラメータはif文で判定可能な形式
+4. **時間足明示**: すべてのインジケーターに `timeframe` を指定
+5. **アクション明確**: `action` は "close_50", "close_all", "close_75" など具体的に
+
+## 条件の列挙型一覧
+
+### entry_conditions.indicators.ema.condition
+- `"price_above"`: 価格がEMAより上
+- `"price_below"`: 価格がEMAより下
+- `"cross_above"`: 価格がEMAを上抜け
+- `"cross_below"`: 価格がEMAを下抜け
+
+### entry_conditions.indicators.macd.condition
+- `"histogram_positive"`: ヒストグラムが正（+）
+- `"histogram_negative"`: ヒストグラムが負（-）
+- `"signal_cross_above"`: MACDラインがシグナルを上抜け
+- `"signal_cross_below"`: MACDラインがシグナルを下抜け
+
+### exit_strategy.indicator_exits[].type
+- `"macd_cross"`: MACDクロス
+- `"ema_break"`: EMAブレイク
+- `"rsi_threshold"`: RSI閾値
+
+### exit_strategy.indicator_exits[].direction
+- `"bullish"`: 強気方向
+- `"bearish"`: 弱気方向
+- `"above"`: 閾値より上
+- `"below"`: 閾値より下
+
+### volatility_expected
+- `"very_low"`: 極めて低い
+- `"low"`: 低い
+- `"medium"`: 中程度
+- `"high"`: 高い
+- `"very_high"`: 極めて高い
