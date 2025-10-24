@@ -38,7 +38,8 @@ response = client.generate_response(
 
 from typing import Optional
 import logging
-from openai import OpenAI
+import time
+from openai import OpenAI, InternalServerError, RateLimitError
 from src.ai_analysis.base_llm_client import BaseLLMClient
 
 
@@ -177,8 +178,27 @@ class OpenAIClient(BaseLLMClient):
                 f"temperature={temperature}, max_tokens={max_tokens}"
             )
 
-            # API呼び出し
-            response = self.client.chat.completions.create(**params)
+            # API呼び出し（リトライ処理付き）
+            max_retries = 3
+            retry_delay = 2  # 初回待機時間（秒）
+
+            for attempt in range(max_retries):
+                try:
+                    response = self.client.chat.completions.create(**params)
+                    break  # 成功したらループを抜ける
+
+                except (InternalServerError, RateLimitError) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)  # 指数バックオフ: 2秒、4秒、8秒
+                        self.logger.warning(
+                            f"OpenAI API error (attempt {attempt + 1}/{max_retries}): {e}. "
+                            f"Retrying in {wait_time} seconds..."
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        # 最後のリトライも失敗
+                        self.logger.error(f"OpenAI API failed after {max_retries} attempts: {e}")
+                        raise
 
             # レスポンスからテキストを取得
             if not response.choices:
@@ -224,12 +244,13 @@ class OpenAIClient(BaseLLMClient):
             self.logger.error(f"OpenAI API error: {e}")
             raise
 
-    def test_connection(self, verbose: bool = False) -> bool:
+    def test_connection(self, verbose: bool = False, model: Optional[str] = None) -> bool:
         """
         OpenAI APIへの接続テスト
 
         Args:
             verbose: 詳細なログを出力するかどうか
+            model: テストに使用するモデル名（Noneの場合はデフォルトモデル）
 
         Returns:
             bool: True=接続成功, False=接続失敗
@@ -238,11 +259,14 @@ class OpenAIClient(BaseLLMClient):
             if verbose:
                 print("🔌 OpenAI API接続テスト中...", end='', flush=True)
 
+            # モデルが指定されていない場合はデフォルト（最も安価）を使用
+            test_model = model if model else "gpt-3.5-turbo"
+
             # 簡単なテストプロンプトを送信
             test_prompt = "Hello, this is a connection test. Please respond with 'OK'."
             response = self.generate_response(
                 prompt=test_prompt,
-                model="gpt-3.5-turbo",  # 最も安価なモデルでテスト
+                model=test_model,
                 max_tokens=10,
                 phase="Connection Test"  # レポートで識別できるようにphaseを設定
             )

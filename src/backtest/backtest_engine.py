@@ -155,8 +155,18 @@ class BacktestEngine:
                 # 各クライアントの接続テスト（表示なし）
                 all_connected = True
                 for phase_name, client in phase_clients.items():
-                    # 接続テスト（verboseなし）
-                    connection_ok = client.test_connection(verbose=False)
+                    # Phase名から実際のモデル名を取得
+                    if phase_name == 'daily_analysis':
+                        test_model = config.model_daily_analysis
+                    elif phase_name == 'periodic_update':
+                        test_model = config.model_periodic_update
+                    elif phase_name == 'position_monitor':
+                        test_model = config.model_position_monitor
+                    else:  # emergency_evaluation
+                        test_model = config.model_emergency_evaluation
+
+                    # 実際の.envモデルで接続テスト（verboseなし）
+                    connection_ok = client.test_connection(verbose=False, model=test_model)
                     if not connection_ok:
                         all_connected = False
 

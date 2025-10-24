@@ -44,6 +44,8 @@ import os
 import logging
 import json
 import re
+import time
+from google.api_core import exceptions as google_exceptions
 from src.ai_analysis.base_llm_client import BaseLLMClient
 
 
@@ -185,11 +187,30 @@ class GeminiClient(BaseLLMClient):
             if max_tokens is not None:
                 generation_config['max_output_tokens'] = max_tokens
 
-            # AI応答の生成
-            response = selected_model.generate_content(
-                prompt,
-                generation_config=generation_config
-            )
+            # AI応答の生成（リトライ処理付き）
+            max_retries = 3
+            retry_delay = 2  # 初回待機時間（秒）
+
+            for attempt in range(max_retries):
+                try:
+                    response = selected_model.generate_content(
+                        prompt,
+                        generation_config=generation_config
+                    )
+                    break  # 成功したらループを抜ける
+
+                except (google_exceptions.InternalServerError, google_exceptions.ResourceExhausted) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)  # 指数バックオフ: 2秒、4秒、8秒
+                        self.logger.warning(
+                            f"Gemini API error (attempt {attempt + 1}/{max_retries}): {e}. "
+                            f"Retrying in {wait_time} seconds..."
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        # 最後のリトライも失敗
+                        self.logger.error(f"Gemini API failed after {max_retries} attempts: {e}")
+                        raise
 
             # finish_reasonをチェック
             if not response.parts:
@@ -441,15 +462,15 @@ class GeminiClient(BaseLLMClient):
                 'reasoning': f'Failed to parse AI response: {str(e)}'
             }
 
-    def test_connection(self, verbose: bool = False) -> bool:
+    def test_connection(self, verbose: bool = False, model: Optional[str] = None) -> bool:
         """
         Gemini APIへの接続テスト
 
         簡単なプロンプトを送信してAPIが正常に動作するか確認します。
-        軽量なテストモデル（gemini-2.0-flash-lite）を使用してテストします。
 
         Args:
             verbose: 詳細なログを出力するかどうか
+            model: テストに使用するモデル名（Noneの場合はデフォルトモデル）
 
         Returns:
             True: 接続成功, False: 接続失敗
@@ -458,11 +479,14 @@ class GeminiClient(BaseLLMClient):
             if verbose:
                 print("🔌 Gemini API接続テスト中...", end='', flush=True)
 
+            # モデルが指定されていない場合はデフォルト（最も軽量で高速）を使用
+            test_model = model if model else 'gemini-2.0-flash-lite'
+
             test_prompt = "Hello, this is a connection test. Please respond with 'OK'."
             # generate_responseを使用してトークン使用量を記録
             response = self.generate_response(
                 prompt=test_prompt,
-                model='gemini-2.0-flash-lite',
+                model=test_model,
                 max_tokens=10,
                 phase="Connection Test"  # レポートで識別できるようにphaseを設定
             )

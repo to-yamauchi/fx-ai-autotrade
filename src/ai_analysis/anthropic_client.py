@@ -36,7 +36,8 @@ response = client.generate_response(
 
 from typing import Optional
 import logging
-from anthropic import Anthropic
+import time
+from anthropic import Anthropic, InternalServerError, RateLimitError
 from src.ai_analysis.base_llm_client import BaseLLMClient
 
 
@@ -175,8 +176,27 @@ class AnthropicClient(BaseLLMClient):
                 f"temperature={temperature}, max_tokens={max_tokens}"
             )
 
-            # API呼び出し
-            response = self.client.messages.create(**params)
+            # API呼び出し（リトライ処理付き）
+            max_retries = 3
+            retry_delay = 2  # 初回待機時間（秒）
+
+            for attempt in range(max_retries):
+                try:
+                    response = self.client.messages.create(**params)
+                    break  # 成功したらループを抜ける
+
+                except (InternalServerError, RateLimitError) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)  # 指数バックオフ: 2秒、4秒、8秒
+                        self.logger.warning(
+                            f"Anthropic API error (attempt {attempt + 1}/{max_retries}): {e}. "
+                            f"Retrying in {wait_time} seconds..."
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        # 最後のリトライも失敗
+                        self.logger.error(f"Anthropic API failed after {max_retries} attempts: {e}")
+                        raise
 
             # レスポンスからテキストを取得
             if not response.content:
@@ -224,12 +244,13 @@ class AnthropicClient(BaseLLMClient):
             self.logger.error(f"Anthropic API error: {e}")
             raise
 
-    def test_connection(self, verbose: bool = False) -> bool:
+    def test_connection(self, verbose: bool = False, model: Optional[str] = None) -> bool:
         """
         Anthropic APIへの接続テスト
 
         Args:
             verbose: 詳細なログを出力するかどうか
+            model: テストに使用するモデル名（Noneの場合はデフォルトモデル）
 
         Returns:
             bool: True=接続成功, False=接続失敗
@@ -238,11 +259,14 @@ class AnthropicClient(BaseLLMClient):
             if verbose:
                 print("🔌 Anthropic API接続テスト中...", end='', flush=True)
 
+            # モデルが指定されていない場合はデフォルト（最も安価で高速）を使用
+            test_model = model if model else "claude-3-5-haiku-20241022"
+
             # 簡単なテストプロンプトを送信
             test_prompt = "Hello, this is a connection test. Please respond with 'OK'."
             response = self.generate_response(
                 prompt=test_prompt,
-                model="claude-3-5-haiku-20241022",  # 最も安価で高速なモデルでテスト
+                model=test_model,
                 max_tokens=10,
                 phase="Connection Test"  # レポートで識別できるようにphaseを設定
             )
