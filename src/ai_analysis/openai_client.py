@@ -173,7 +173,8 @@ class OpenAIClient(BaseLLMClient):
             response = self.generate_response(
                 prompt=test_prompt,
                 model="gpt-3.5-turbo",  # 最も安価なモデルでテスト
-                max_tokens=10
+                max_tokens=10,
+                phase="Connection Test"  # レポートで識別できるようにphaseを設定
             )
 
             if response:
