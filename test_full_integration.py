@@ -260,7 +260,11 @@ def main():
             return 1
 
     except Exception as e:
+        import traceback
         print(f"❌ LLM APIの初期化に失敗しました: {e}")
+        print("")
+        print("詳細なエラー情報：")
+        traceback.print_exc()
         print("")
         print("   .envファイルを確認してください。")
         print("")
