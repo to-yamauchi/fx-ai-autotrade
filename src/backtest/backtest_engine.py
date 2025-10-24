@@ -111,13 +111,17 @@ class BacktestEngine:
             backtest_end_date=self.end_date.date()
         )
 
-        # データローダー：CSVまたはMT5
+        # データローダー：CSVまたはTickDataLoader（キャッシュ使用）
         if self.csv_path:
             self.data_loader = CSVTickLoader(csv_path=self.csv_path, symbol=self.symbol)
             self.use_csv = True
+            self.use_tick_loader = False
         else:
-            self.data_loader = MT5DataLoader(symbol=self.symbol)
+            # バックテストモードではTickDataLoader（DBキャッシュ使用）を使用
+            from src.data_processing.tick_loader import TickDataLoader
+            self.data_loader = TickDataLoader(use_cache=True)
             self.use_csv = False
+            self.use_tick_loader = True
 
         self.rules = TradingRules()
 
@@ -144,41 +148,16 @@ class BacktestEngine:
                 from src.ai_analysis import create_phase_clients
                 from src.ai_analysis.llm_client_factory import detect_provider_from_model
 
-                # Phase別のLLMクライアントを生成・接続テスト
-                print("")
-                print("🤖 使用モデル構成:")
-                print("=" * 80)
-
+                # Phase別のLLMクライアントを生成・接続テスト（環境チェックで既に表示済みのため、ここではテストのみ実施）
                 phase_clients = create_phase_clients()
 
-                # 各クライアントの接続テスト
+                # 各クライアントの接続テスト（表示なし）
                 all_connected = True
                 for phase_name, client in phase_clients.items():
-                    provider = client.get_provider_name()
-                    if phase_name == 'daily_analysis':
-                        model = config.model_daily_analysis
-                        label = "Phase 1,2 (デイリー分析)"
-                    elif phase_name == 'periodic_update':
-                        model = config.model_periodic_update
-                        label = "Phase 3   (定期更新)"
-                    elif phase_name == 'position_monitor':
-                        model = config.model_position_monitor
-                        label = "Phase 4   (ポジション監視)"
-                    else:  # emergency_evaluation
-                        model = config.model_emergency_evaluation
-                        label = "Phase 5   (緊急評価)"
-
-                    # 接続テスト（verboseなし、結果のみ表示）
+                    # 接続テスト（verboseなし）
                     connection_ok = client.test_connection(verbose=False)
-                    status = "✓" if connection_ok else "❌"
-
-                    # 1行で表示: Phase名 - モデル名 [プロバイダー] ステータス
-                    print(f"{label:<25} {model:<35} [{provider.upper():<10}] {status}")
-
                     if not connection_ok:
                         all_connected = False
-
-                print("=" * 80)
 
                 if not all_connected:
                     print("")
@@ -475,26 +454,52 @@ class BacktestEngine:
                 end_date=self.end_date.strftime('%Y-%m-%d'),
                 history_days=30  # AI分析に必要な過去データ
             )
-        else:
-            # MT5から読み込み
-            days = (self.end_date - self.start_date).days
-            tick_df = self.data_loader.load_recent_ticks(days=days + 30)
 
-        if tick_df is None or tick_df.empty:
-            self.logger.error("❌ データ読み込み失敗")
+            # DataFrameをリストに変換
+            tick_data = []
+            for idx, row in tick_df.iterrows():
+                tick_data.append({
+                    'time': row['timestamp'],  # カラム名は'timestamp'
+                    'bid': row['bid'],
+                    'ask': row['ask']
+                })
+
+            print(f"✓ {len(tick_data):,}ティック読み込み完了（CSV）")
+            print("")
+
+        elif self.use_tick_loader:
+            # TickDataLoader（DBキャッシュ使用）から読み込み
+            # AI分析用に30日前からのデータを読み込む
+            extended_start = self.start_date - timedelta(days=30)
+
+            tick_data = self.data_loader.load_date_range(
+                symbol=self.symbol,
+                start_date=extended_start,
+                end_date=self.end_date
+            )
+
+            # キャッシュ使用統計を表示
+            stats = self.data_loader.last_cache_stats
+            if stats:
+                print(f"✓ {len(tick_data):,}ティック読み込み完了 | "
+                      f"キャッシュヒット: {stats['cache_hits']}/{stats['total_days']}日 ({stats['hit_rate']:.1f}%) | "
+                      f"ZIPロード: {stats['months_loaded']}ヶ月")
+            else:
+                print(f"✓ {len(tick_data):,}ティック読み込み完了（キャッシュ未使用）")
+            print("")
+
+        else:
+            self.logger.error("❌ データローダーが正しく初期化されていません")
             return {}
 
-        # DataFrameをリストに変換
-        tick_data = []
-        for idx, row in tick_df.iterrows():
-            tick_data.append({
-                'time': row['timestamp'],  # カラム名は'timestamp'
-                'bid': row['bid'],
-                'ask': row['ask']
-            })
+        # 時刻キーの統一（'timestamp' に変換）
+        if tick_data and 'timestamp' in tick_data[0]:
+            for tick in tick_data:
+                tick['time'] = tick['timestamp']
 
-        print(f"✓ {len(tick_data):,}ティック読み込み完了")
-        print("")
+        if not tick_data:
+            self.logger.error("❌ データ読み込み失敗")
+            return {}
 
         # 2. 日ごとのループでバックテスト実行
         print("🔄 バックテスト実行中...")

@@ -82,6 +82,9 @@ class TickDataLoader:
         self.use_cache = use_cache
         self.logger = logging.getLogger(__name__)
 
+        # キャッシュ統計
+        self.last_cache_stats = None
+
         # ログレベルの設定
         if not self.logger.handlers:
             handler = logging.StreamHandler()
@@ -566,14 +569,23 @@ class TickDataLoader:
                     )
                 continue
 
-        # キャッシュ使用状況をログ出力
+        # キャッシュ使用状況を保存・ログ出力
         if self.use_cache:
             total_days = len(all_dates)
+            self.last_cache_stats = {
+                'cache_hits': cache_hits,
+                'cache_misses': cache_misses,
+                'total_days': total_days,
+                'hit_rate': cache_hits/total_days*100 if total_days > 0 else 0,
+                'months_loaded': len(months_loaded)
+            }
             self.logger.info(
                 f"キャッシュ使用状況: ヒット {cache_hits}/{total_days}日 "
-                f"({cache_hits/total_days*100:.1f}%), "
+                f"({self.last_cache_stats['hit_rate']:.1f}%), "
                 f"ミス {cache_misses}日, ZIPロード {len(months_loaded)}ヶ月"
             )
+        else:
+            self.last_cache_stats = None
 
         # 一部のファイルが見つからなかった場合は警告
         if missing_files:
