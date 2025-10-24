@@ -371,7 +371,7 @@ class OpenAIClient(BaseLLMClient):
         Responses APIのレスポンスからテキストを抽出
 
         Args:
-            response: APIレスポンス
+            response: APIレスポンス (openai.types.responses.Response)
 
         Returns:
             str: 抽出されたテキスト
@@ -379,22 +379,16 @@ class OpenAIClient(BaseLLMClient):
         Raises:
             ValueError: レスポンスが空または異常な場合
         """
-        # GPT-5 Responses APIのレスポンス構造:
-        # response.output[0].content[0].text
-        if not hasattr(response, 'output') or not response.output:
-            raise ValueError("OpenAI Responses API returned no output")
+        # OpenAI SDKのResponseオブジェクトにはoutput_textプロパティがある
+        # これがすべてのoutput_textコンテンツを集約したもの
+        if not hasattr(response, 'output_text'):
+            self.logger.error(f"Response has no 'output_text' property. Type: {type(response)}")
+            raise ValueError("OpenAI Responses API returned unexpected response type")
 
-        output_item = response.output[0]
+        text = response.output_text
 
-        # textを取得
-        if hasattr(output_item, 'content') and output_item.content:
-            # content[0].text形式
-            text = output_item.content[0].text
-        elif hasattr(output_item, 'text'):
-            # 直接text属性がある場合
-            text = output_item.text
-        else:
-            raise ValueError("OpenAI Responses API returned unexpected format")
+        if not text:
+            self.logger.warning("OpenAI Responses API returned empty output_text")
 
         self.logger.debug(
             f"OpenAI Responses API response received: "
