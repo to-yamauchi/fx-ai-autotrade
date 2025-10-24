@@ -35,5 +35,6 @@ is_valid, message = rules.validate_trade(
 """
 
 from src.rule_engine.trading_rules import TradingRules
+from src.rule_engine.structured_rule_engine import StructuredRuleEngine
 
-__all__ = ['TradingRules']
+__all__ = ['TradingRules', 'StructuredRuleEngine']
