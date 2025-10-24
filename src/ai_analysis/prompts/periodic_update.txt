@@ -47,6 +47,12 @@ b) **リスク調整**: position_size_multiplierの増減
 c) **決済調整**: SL/TP レベルの変更
 d) **変更なし**: 朝の戦略を継続
 
+### 4. 残り時間の予測
+現在時刻（{update_time}）から本日終了（23:00）までの時間別予測：
+- 次の時間帯の予想価格レンジ
+- 推奨アクション
+- 注意点
+
 ## 出力形式（JSON）
 
 以下のJSON形式で回答してください：
@@ -115,6 +121,26 @@ d) **変更なし**: 朝の戦略を継続
     "direction": "BUY" | "SELL" | null,
     "reason": "エントリー推奨理由",
     "entry_price_zone": {{"min": 153.40, "max": 153.60}}
+  }},
+  "hourly_predictions_remaining": {{
+    "15:00": {{
+      "predicted_range": {{"min": 149.55, "max": 149.80}},
+      "bias": "BUY",
+      "recommended_action": "説明",
+      "注意点": "注意事項"
+    }},
+    "18:00": {{
+      "predicted_range": {{"min": 149.60, "max": 149.90}},
+      "bias": "BUY",
+      "recommended_action": "説明",
+      "注意点": "注意事項"
+    }},
+    "21:00": {{
+      "predicted_range": {{"min": 149.50, "max": 149.85}},
+      "bias": "NEUTRAL",
+      "recommended_action": "説明",
+      "注意点": "注意事項"
+    }}
   }},
   "summary": "定期更新の要約（1-2文）"
 }}
