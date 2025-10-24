@@ -229,13 +229,16 @@ def main():
             provider = client.get_provider_name()
             if phase_name == 'daily_analysis':
                 model = config.model_daily_analysis
-                label = "Phase 1,2,5 (デイリー分析)"
+                label = "Phase 1,2   (デイリー分析)"
             elif phase_name == 'periodic_update':
                 model = config.model_periodic_update
                 label = "Phase 3     (定期更新)"
-            else:  # position_monitor
+            elif phase_name == 'position_monitor':
                 model = config.model_position_monitor
                 label = "Phase 4     (ポジション監視)"
+            else:  # emergency_evaluation
+                model = config.model_emergency_evaluation
+                label = "Phase 5     (緊急評価)"
 
             print(f"{label}: {model}")
             print(f"  Provider: {provider.upper()}", end=' ')

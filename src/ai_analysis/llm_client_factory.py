@@ -141,7 +141,8 @@ def create_phase_clients() -> dict:
             {
                 'daily_analysis': BaseLLMClient,
                 'periodic_update': BaseLLMClient,
-                'position_monitor': BaseLLMClient
+                'position_monitor': BaseLLMClient,
+                'emergency_evaluation': BaseLLMClient
             }
     """
     config = get_config()
@@ -150,13 +151,15 @@ def create_phase_clients() -> dict:
         'daily_analysis': create_llm_client(config.model_daily_analysis),
         'periodic_update': create_llm_client(config.model_periodic_update),
         'position_monitor': create_llm_client(config.model_position_monitor),
+        'emergency_evaluation': create_llm_client(config.model_emergency_evaluation),
     }
 
     logger.info(
         f"Phase clients created:\n"
         f"  Daily Analysis: {config.model_daily_analysis}\n"
         f"  Periodic Update: {config.model_periodic_update}\n"
-        f"  Position Monitor: {config.model_position_monitor}"
+        f"  Position Monitor: {config.model_position_monitor}\n"
+        f"  Emergency Evaluation: {config.model_emergency_evaluation}"
     )
 
     return clients
