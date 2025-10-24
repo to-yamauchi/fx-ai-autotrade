@@ -174,7 +174,8 @@ class AnthropicClient(BaseLLMClient):
             response = self.generate_response(
                 prompt=test_prompt,
                 model="claude-3-5-haiku-20241022",  # 最も安価で高速なモデルでテスト
-                max_tokens=10
+                max_tokens=10,
+                phase="Connection Test"  # レポートで識別できるようにphaseを設定
             )
 
             if response:

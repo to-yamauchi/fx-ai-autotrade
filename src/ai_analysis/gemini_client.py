@@ -425,11 +425,15 @@ class GeminiClient(BaseLLMClient):
                 print("🔌 Gemini API接続テスト中...", end='', flush=True)
 
             test_prompt = "Hello, this is a connection test. Please respond with 'OK'."
-            # 軽量なテストモデルを使用
-            test_model = genai.GenerativeModel('gemini-2.0-flash-lite')
-            response = test_model.generate_content(test_prompt)
+            # generate_responseを使用してトークン使用量を記録
+            response = self.generate_response(
+                prompt=test_prompt,
+                model='gemini-2.0-flash-lite',
+                max_tokens=10,
+                phase="Connection Test"  # レポートで識別できるようにphaseを設定
+            )
 
-            if response.text:
+            if response:
                 if verbose:
                     print(" ✓ 接続成功")
                 return True

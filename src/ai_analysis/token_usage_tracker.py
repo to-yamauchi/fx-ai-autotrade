@@ -121,6 +121,85 @@ class TokenUsageTracker:
 
         return input_cost + output_cost
 
+    def _get_filtered_summary(self) -> Dict:
+        """
+        接続テストを除外したトークン使用量のサマリーを取得
+
+        Returns:
+            Dict: Phase別、プロバイダー別の統計情報（接続テスト除く）
+        """
+        # 接続テストを除外
+        filtered_records = [
+            r for r in self.usage_records
+            if r['phase'] != 'Connection Test'
+        ]
+
+        if not filtered_records:
+            return {
+                'total_input_tokens': 0,
+                'total_output_tokens': 0,
+                'total_tokens': 0,
+                'by_phase': {},
+                'by_provider': {},
+                'by_model': {},
+                'call_count': 0
+            }
+
+        # Phase別集計
+        by_phase = defaultdict(lambda: {'input': 0, 'output': 0, 'total': 0, 'calls': 0, 'cost': 0})
+        for record in filtered_records:
+            phase = record['phase']
+            by_phase[phase]['input'] += record['input_tokens']
+            by_phase[phase]['output'] += record['output_tokens']
+            by_phase[phase]['total'] += record['total_tokens']
+            by_phase[phase]['calls'] += 1
+            cost = self._calculate_cost(record['model'], record['input_tokens'], record['output_tokens'])
+            if cost is not None:
+                by_phase[phase]['cost'] += cost
+
+        # プロバイダー別集計
+        by_provider = defaultdict(lambda: {'input': 0, 'output': 0, 'total': 0, 'calls': 0, 'cost': 0})
+        for record in filtered_records:
+            provider = record['provider']
+            by_provider[provider]['input'] += record['input_tokens']
+            by_provider[provider]['output'] += record['output_tokens']
+            by_provider[provider]['total'] += record['total_tokens']
+            by_provider[provider]['calls'] += 1
+            cost = self._calculate_cost(record['model'], record['input_tokens'], record['output_tokens'])
+            if cost is not None:
+                by_provider[provider]['cost'] += cost
+
+        # モデル別集計
+        by_model = defaultdict(lambda: {'input': 0, 'output': 0, 'total': 0, 'calls': 0, 'cost': 0})
+        for record in filtered_records:
+            model = record['model']
+            by_model[model]['input'] += record['input_tokens']
+            by_model[model]['output'] += record['output_tokens']
+            by_model[model]['total'] += record['total_tokens']
+            by_model[model]['calls'] += 1
+            cost = self._calculate_cost(model, record['input_tokens'], record['output_tokens'])
+            if cost is not None:
+                by_model[model]['cost'] += cost
+
+        # 総計
+        total_input = sum(r['input_tokens'] for r in filtered_records)
+        total_output = sum(r['output_tokens'] for r in filtered_records)
+        total_cost = sum(
+            self._calculate_cost(r['model'], r['input_tokens'], r['output_tokens']) or 0
+            for r in filtered_records
+        )
+
+        return {
+            'total_input_tokens': total_input,
+            'total_output_tokens': total_output,
+            'total_tokens': total_input + total_output,
+            'total_cost': total_cost,
+            'by_phase': dict(by_phase),
+            'by_provider': dict(by_provider),
+            'by_model': dict(by_model),
+            'call_count': len(filtered_records)
+        }
+
     def get_summary(self) -> Dict:
         """
         トークン使用量のサマリーを取得
@@ -198,29 +277,32 @@ class TokenUsageTracker:
         }
 
     def print_summary(self):
-        """トークン使用量サマリーを標準出力に表示"""
+        """トークン使用量サマリーを標準出力に表示（接続テストを除く）"""
         summary = self.get_summary()
+
+        # 接続テストを除外したサマリーを計算
+        filtered_summary = self._get_filtered_summary()
 
         print("=" * 80)
         print("トークン使用量レポート")
         print("=" * 80)
         print()
 
-        # 総計
-        print(f"総API呼び出し回数: {summary['call_count']:,}回")
-        print(f"総入力トークン数:   {summary['total_input_tokens']:,} tokens")
-        print(f"総出力トークン数:   {summary['total_output_tokens']:,} tokens")
-        print(f"総トークン数:       {summary['total_tokens']:,} tokens")
-        if summary['total_cost'] > 0:
-            print(f"総コスト:           ${summary['total_cost']:.4f} USD")
+        # 総計（接続テスト除く）
+        print(f"総API呼び出し回数: {filtered_summary['call_count']:,}回")
+        print(f"総入力トークン数:   {filtered_summary['total_input_tokens']:,} tokens")
+        print(f"総出力トークン数:   {filtered_summary['total_output_tokens']:,} tokens")
+        print(f"総トークン数:       {filtered_summary['total_tokens']:,} tokens")
+        if filtered_summary['total_cost'] > 0:
+            print(f"総コスト:           ${filtered_summary['total_cost']:.4f} USD")
         print()
 
-        # Phase別
-        if summary['by_phase']:
+        # Phase別（接続テスト除く）
+        if filtered_summary['by_phase']:
             print("-" * 80)
             print("Phase別使用量:")
             print("-" * 80)
-            for phase, stats in sorted(summary['by_phase'].items()):
+            for phase, stats in sorted(filtered_summary['by_phase'].items()):
                 cost_str = f" | コスト: ${stats['cost']:.4f}" if stats['cost'] > 0 else ""
                 print(f"{phase:20s}: {stats['calls']:3d}回 | "
                       f"入力: {stats['input']:8,} | "
@@ -228,12 +310,12 @@ class TokenUsageTracker:
                       f"合計: {stats['total']:8,} tokens{cost_str}")
             print()
 
-        # プロバイダー別
-        if summary['by_provider']:
+        # プロバイダー別（接続テスト除く）
+        if filtered_summary['by_provider']:
             print("-" * 80)
             print("プロバイダー別使用量:")
             print("-" * 80)
-            for provider, stats in sorted(summary['by_provider'].items()):
+            for provider, stats in sorted(filtered_summary['by_provider'].items()):
                 cost_str = f" | コスト: ${stats['cost']:.4f}" if stats['cost'] > 0 else ""
                 print(f"{provider.upper():20s}: {stats['calls']:3d}回 | "
                       f"入力: {stats['input']:8,} | "
@@ -241,12 +323,12 @@ class TokenUsageTracker:
                       f"合計: {stats['total']:8,} tokens{cost_str}")
             print()
 
-        # モデル別
-        if summary['by_model']:
+        # モデル別（接続テスト除く）
+        if filtered_summary['by_model']:
             print("-" * 80)
             print("モデル別使用量:")
             print("-" * 80)
-            for model, stats in sorted(summary['by_model'].items()):
+            for model, stats in sorted(filtered_summary['by_model'].items()):
                 cost_str = f" | コスト: ${stats['cost']:.4f}" if stats['cost'] > 0 else ""
                 print(f"{model:40s}: {stats['calls']:3d}回 | "
                       f"入力: {stats['input']:8,} | "
@@ -255,7 +337,7 @@ class TokenUsageTracker:
             print()
 
         # コスト情報の注釈
-        if summary['total_cost'] > 0:
+        if filtered_summary['total_cost'] > 0:
             print("-" * 80)
             print("※ コストは.envで設定されたPRICE_*変数に基づいて計算されています")
             print("※ 料金が設定されていないモデルのコストは0として表示されます")

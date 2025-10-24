@@ -571,7 +571,8 @@ class AIAnalyzer:
             # Gemini Pro呼び出し（温度・トークン数は.envから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                model='pro'  # Phase 1: デイリーレビュー
+                model='pro',  # Phase 1: デイリーレビュー
+                phase='Phase 1 (Daily Review)'
             )
 
             # JSONパース
@@ -734,7 +735,8 @@ class AIAnalyzer:
             # Gemini Pro呼び出し（温度・トークン数は.envから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                model='pro'  # Phase 2: 朝の詳細分析
+                model='pro',  # Phase 2: 朝の詳細分析
+                phase='Phase 2 (Morning Analysis)'
             )
 
             # JSONパース
@@ -979,7 +981,8 @@ class AIAnalyzer:
             # Gemini Flash呼び出し（温度・トークン数は.envから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                model='flash'  # Phase 3: 定期更新
+                model='flash',  # Phase 3: 定期更新
+                phase='Phase 3 (Periodic Update)'
             )
 
             # JSONパース
@@ -1201,7 +1204,8 @@ class AIAnalyzer:
             # Gemini Flash-8B呼び出し（温度・トークン数は.envから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                model='flash-8b'  # Phase 4: Layer 3a監視
+                model='flash-8b',  # Phase 4: Layer 3a監視
+                phase='Phase 4 (Layer 3a Monitor)'
             )
 
             # JSONパース
@@ -1386,7 +1390,8 @@ class AIAnalyzer:
             # Gemini Pro呼び出し（温度・トークン数は.envから取得）
             response = self.gemini_client.generate_response(
                 prompt=prompt,
-                model='pro'  # Phase 5: Layer 3b緊急評価
+                model='pro',  # Phase 5: Layer 3b緊急評価
+                phase='Phase 5 (Layer 3b Emergency)'
             )
 
             # JSONパース
