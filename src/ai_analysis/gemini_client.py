@@ -353,6 +353,28 @@ class GeminiClient(BaseLLMClient):
             # すでに完全なモデル名（例: gemini-2.5-flash, claude-sonnet-4-5など）
             model_name = model
 
+        # モデル名のバリデーション - GeminiClient はGeminiモデルのみ対応
+        if not model_name.startswith('gemini-'):
+            # Gemini以外のモデルが指定された場合
+            provider_hint = "Unknown"
+            if model_name.startswith('claude-'):
+                provider_hint = "Anthropic Claude"
+            elif model_name.startswith(('gpt-', 'o1-', 'chatgpt-')):
+                provider_hint = "OpenAI"
+
+            raise ValueError(
+                f"GeminiClient cannot use non-Gemini model: '{model_name}' ({provider_hint})\n"
+                f"Please configure a Gemini model (gemini-*) in your .env file.\n"
+                f"Example Gemini models:\n"
+                f"  - gemini-2.0-flash-exp\n"
+                f"  - gemini-1.5-flash\n"
+                f"  - gemini-1.5-flash-8b\n"
+                f"  - gemini-1.5-pro\n"
+                f"\n"
+                f"If you want to use {provider_hint} models, the system needs to be updated\n"
+                f"to use the multi-provider architecture with appropriate client selection."
+            )
+
         # GenerativeModelオブジェクトを生成して、モデル名も返す
         return genai.GenerativeModel(model_name), model_name
 
