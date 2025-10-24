@@ -971,8 +971,59 @@ class BacktestEngine:
                             f.write(f"  • {lesson}\n")
                         f.write("\n")
 
-                    # Phase 2: 朝の詳細分析
-                    if 'morning_analysis' in report_data:
+                    # Phase 2: 毎時ルール生成（統一システム）
+                    if 'hourly_rules' in report_data:
+                        f.write("─" * 100 + "\n")
+                        f.write("🤖 構造化ルール生成（毎時）\n")
+                        f.write("─" * 100 + "\n")
+                        hourly_rules = report_data['hourly_rules']
+                        f.write(f"生成回数: {len(hourly_rules)}回\n\n")
+
+                        # 時間順にソートして表示
+                        for hour_str in sorted(hourly_rules.keys()):
+                            strategy = hourly_rules[hour_str]
+                            f.write(f"\n【{hour_str}】\n")
+                            f.write(f"  デイリーバイアス: {strategy.get('daily_bias', 'N/A')}\n")
+                            f.write(f"  確信度: {strategy.get('confidence', 0):.2f}\n")
+                            f.write(f"  判断理由: {strategy.get('reasoning', 'なし')[:100]}...\n")
+
+                            # エントリー条件
+                            entry_cond = strategy.get('entry_conditions', {})
+                            f.write(f"  エントリー: {entry_cond.get('direction', 'N/A')} ")
+                            f.write(f"(トレード推奨: {'はい' if entry_cond.get('should_trade', False) else 'いいえ'})\n")
+
+                        f.write("\n")
+
+                        # 最初のルールの詳細を表示
+                        if hourly_rules:
+                            first_hour = sorted(hourly_rules.keys())[0]
+                            strategy = hourly_rules[first_hour]
+                            f.write(f"初回ルール（{first_hour}）の詳細:\n")
+                            f.write("─" * 50 + "\n")
+                            f.write(f"デイリーバイアス: {strategy.get('daily_bias', 'N/A')}\n")
+                            f.write(f"確信度: {strategy.get('confidence', 0):.2f}\n\n")
+                            f.write(f"判断理由:\n{strategy.get('reasoning', 'なし')}\n\n")
+
+                            # エントリー条件
+                            entry_cond = strategy.get('entry_conditions', {})
+                            f.write(f"エントリー条件:\n")
+                            f.write(f"  方向: {entry_cond.get('direction', 'N/A')}\n")
+                            f.write(f"  トレード推奨: {entry_cond.get('should_trade', False)}\n")
+                            if 'entry_zone' in entry_cond:
+                                f.write(f"  エントリーゾーン: {entry_cond['entry_zone']}\n")
+                            f.write("\n")
+
+                            # リスク管理パラメータ
+                            f.write("リスク管理パラメータ:\n")
+                            risk_mgmt = strategy.get('risk_management', {})
+                            if risk_mgmt:
+                                f.write(f"  ストップロス: {risk_mgmt.get('stop_loss_pips', 'N/A')} pips\n")
+                                f.write(f"  テイクプロフィット: {risk_mgmt.get('take_profit_pips', 'N/A')} pips\n")
+                                f.write(f"  ポジションサイズ: {risk_mgmt.get('position_size', 'N/A')}\n")
+                            f.write("\n")
+
+                    # Phase 2 (旧): 朝の詳細分析（後方互換性）
+                    elif 'morning_analysis' in report_data:
                         f.write("─" * 100 + "\n")
                         f.write("🌅 Phase 2: 朝の詳細分析（本日の戦略）\n")
                         f.write("─" * 100 + "\n")
