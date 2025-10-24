@@ -161,9 +161,11 @@ class TradeSimulator:
         self.open_positions[ticket] = position
 
         # ログとコンソール出力
+        sl_str = f"{sl:.3f}" if sl is not None else "なし"
+        tp_str = f"{tp:.3f}" if tp is not None else "なし"
         entry_msg = (
             f"📈 エントリー: #{ticket} | {action} {volume}ロット @ {entry_price:.3f} | "
-            f"SL: {sl:.3f if sl else 'なし'} | TP: {tp:.3f if tp else 'なし'} | "
+            f"SL: {sl_str} | TP: {tp_str} | "
             f"残高: {self.balance:,.0f}円"
         )
         self.logger.info(f"Position opened: ticket={ticket}, {action} {volume} lots @ {entry_price}")
