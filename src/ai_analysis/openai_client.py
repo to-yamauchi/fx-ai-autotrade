@@ -379,6 +379,22 @@ class OpenAIClient(BaseLLMClient):
         Raises:
             ValueError: レスポンスが空または異常な場合
         """
+        # デバッグ: レスポンスの詳細情報を確認
+        self.logger.debug(f"Response status: {response.status if hasattr(response, 'status') else 'N/A'}")
+        self.logger.debug(f"Response output length: {len(response.output) if hasattr(response, 'output') else 0}")
+
+        # output配列の内容を確認
+        if hasattr(response, 'output') and response.output:
+            for i, output_item in enumerate(response.output):
+                self.logger.debug(f"Output[{i}] type: {output_item.type if hasattr(output_item, 'type') else 'N/A'}")
+                if hasattr(output_item, 'content'):
+                    self.logger.debug(f"Output[{i}] content length: {len(output_item.content)}")
+                    for j, content_item in enumerate(output_item.content):
+                        content_type = content_item.type if hasattr(content_item, 'type') else 'N/A'
+                        self.logger.debug(f"Output[{i}] content[{j}] type: {content_type}")
+                        if content_type == 'text' and hasattr(content_item, 'text'):
+                            self.logger.debug(f"Output[{i}] content[{j}] text length: {len(content_item.text)}")
+
         # OpenAI SDKのResponseオブジェクトにはoutput_textプロパティがある
         # これがすべてのoutput_textコンテンツを集約したもの
         if not hasattr(response, 'output_text'):
@@ -387,8 +403,30 @@ class OpenAIClient(BaseLLMClient):
 
         text = response.output_text
 
+        # output_textが空の場合、代替手段を試す
         if not text:
             self.logger.warning("OpenAI Responses API returned empty output_text")
+
+            # 代替: output配列から直接テキストを取得
+            if hasattr(response, 'output') and response.output:
+                texts = []
+                for output_item in response.output:
+                    if hasattr(output_item, 'content'):
+                        for content_item in output_item.content:
+                            # 'text'タイプのコンテンツを探す（output_textではなく）
+                            if hasattr(content_item, 'type') and content_item.type == 'text':
+                                if hasattr(content_item, 'text'):
+                                    texts.append(content_item.text)
+                                    self.logger.debug(f"Found 'text' type content: {len(content_item.text)} chars")
+
+                if texts:
+                    text = "".join(texts)
+                    self.logger.info(f"Extracted text from 'text' type content: {len(text)} chars")
+
+        if not text:
+            # それでも空の場合はエラー
+            self.logger.error("No text content found in response")
+            raise ValueError("OpenAI Responses API returned no text content")
 
         self.logger.debug(
             f"OpenAI Responses API response received: "
