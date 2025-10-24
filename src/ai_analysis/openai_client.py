@@ -371,7 +371,7 @@ class OpenAIClient(BaseLLMClient):
         Responses APIのレスポンスからテキストを抽出
 
         Args:
-            response: APIレスポンス
+            response: APIレスポンス (openai.types.responses.Response)
 
         Returns:
             str: 抽出されたテキスト
@@ -379,54 +379,16 @@ class OpenAIClient(BaseLLMClient):
         Raises:
             ValueError: レスポンスが空または異常な場合
         """
-        # デバッグ: レスポンスの構造をログに出力
-        self.logger.debug(f"GPT-5 Response type: {type(response)}")
+        # OpenAI SDKのResponseオブジェクトにはoutput_textプロパティがある
+        # これがすべてのoutput_textコンテンツを集約したもの
+        if not hasattr(response, 'output_text'):
+            self.logger.error(f"Response has no 'output_text' property. Type: {type(response)}")
+            raise ValueError("OpenAI Responses API returned unexpected response type")
 
-        # レスポンスオブジェクトを辞書に変換して構造を確認
-        try:
-            if hasattr(response, 'model_dump'):
-                response_dict = response.model_dump()
-                self.logger.debug(f"GPT-5 Response structure (model_dump): {response_dict}")
-            elif hasattr(response, 'dict'):
-                response_dict = response.dict()
-                self.logger.debug(f"GPT-5 Response structure (dict): {response_dict}")
-        except Exception as e:
-            self.logger.debug(f"Could not serialize response: {e}")
+        text = response.output_text
 
-        self.logger.debug(f"GPT-5 Response attributes: {[attr for attr in dir(response) if not attr.startswith('_')]}")
-
-        # GPT-5 Responses APIのレスポンス構造を確認
-        if not hasattr(response, 'output') or not response.output:
-            # outputが無い場合、他の可能性をチェック
-            self.logger.error(f"Response has no 'output' attribute. Available attributes: {[attr for attr in dir(response) if not attr.startswith('_')]}")
-            raise ValueError("OpenAI Responses API returned no output")
-
-        output_item = response.output[0]
-        self.logger.debug(f"Output item type: {type(output_item)}")
-        self.logger.debug(f"Output item attributes: {[attr for attr in dir(output_item) if not attr.startswith('_')]}")
-
-        # textを取得
-        if hasattr(output_item, 'content') and output_item.content:
-            # content[0].text形式
-            content_item = output_item.content[0]
-            self.logger.debug(f"Content item type: {type(content_item)}")
-            self.logger.debug(f"Content item attributes: {[attr for attr in dir(content_item) if not attr.startswith('_')]}")
-
-            if hasattr(content_item, 'text'):
-                text = content_item.text
-            else:
-                # content_item自体が文字列の可能性
-                text = str(content_item)
-        elif hasattr(output_item, 'text'):
-            # 直接text属性がある場合
-            text = output_item.text
-        else:
-            # 他の可能性をチェック
-            self.logger.error(f"Output item structure: {output_item}")
-            raise ValueError(
-                f"OpenAI Responses API returned unexpected format. "
-                f"Output item has attributes: {[attr for attr in dir(output_item) if not attr.startswith('_')]}"
-            )
+        if not text:
+            self.logger.warning("OpenAI Responses API returned empty output_text")
 
         self.logger.debug(
             f"OpenAI Responses API response received: "
