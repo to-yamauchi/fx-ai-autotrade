@@ -496,6 +496,11 @@ class TradeSimulator:
 
             if is_open:
                 # 新規エントリー
+                # commentを切り詰め（TEXT型なので長くてもOKだが、念のため1000文字に制限）
+                comment = position.get('comment', '')
+                if len(comment) > 1000:
+                    comment = comment[:997] + '...'
+
                 insert_query = """
                     INSERT INTO backtest_trades
                     (symbol, backtest_start_date, backtest_end_date, ticket, action, volume,
@@ -513,10 +518,16 @@ class TradeSimulator:
                     position['entry_price'],
                     position.get('sl'),
                     position.get('tp'),
-                    position.get('comment', '')
+                    comment
                 ))
             else:
                 # 決済（更新）
+                # exit_reasonを切り詰め（現在はVARCHAR(100)、マイグレーション後はVARCHAR(500)）
+                # 注: migration 009実行後は500文字に拡張されます
+                exit_reason = position.get('exit_reason', 'Unknown')
+                if len(exit_reason) > 100:
+                    exit_reason = exit_reason[:97] + '...'
+
                 update_query = """
                     UPDATE backtest_trades
                     SET exit_time = %s,
@@ -532,7 +543,7 @@ class TradeSimulator:
                 cursor.execute(update_query, (
                     position.get('exit_time'),
                     position.get('exit_price'),
-                    position.get('exit_reason', 'Unknown'),
+                    exit_reason,
                     position.get('profit', 0.0),
                     position.get('profit_pips', 0.0),
                     self.symbol,
