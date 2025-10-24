@@ -560,72 +560,57 @@ class BacktestEngine:
                         current_date - timedelta(days=1)
                     )
 
-            # === 08:00 朝の詳細分析（Gemini Pro） ===
-            strategy_result = self._run_morning_analysis(
-                current_date=current_date,
-                review_result=review_result
-            )
-
-            # 戦略情報を記録
-            bias = 'N/A'
-            should_trade = False
-            if strategy_result:
-                bias = strategy_result.get('daily_bias', 'N/A')
-                should_trade = strategy_result.get('entry_conditions', {}).get('should_trade', False)
-
-            # 朝の戦略に基づいてトレード判断
-            # トレード実行前に市場価格を設定（その日の最初のティックを使用）
-            next_date = current_date + timedelta(days=1)
-            for tick in tick_data:
-                tick_time = tick['time']
-                if current_date <= tick_time.date() < next_date:
-                    # その日の最初のティックで市場価格を更新
-                    self.simulator.update_market_price(
-                        bid=tick['bid'],
-                        ask=tick['ask']
-                    )
-                    break
-
-            current_time = datetime.combine(current_date, datetime.min.time())
-            if strategy_result and should_trade:
-                self._execute_trade_from_strategy(strategy_result, current_time)
-
-            # === 12:00/16:00/21:30 定期更新（Gemini Flash） ===
-            strategy_result = self._run_periodic_update(
-                current_date=current_date,
-                update_time="12:00",
-                morning_strategy=strategy_result
-            )
-
-            strategy_result = self._run_periodic_update(
-                current_date=current_date,
-                update_time="16:00",
-                morning_strategy=strategy_result
-            )
-
-            strategy_result = self._run_periodic_update(
-                current_date=current_date,
-                update_time="21:30",
-                morning_strategy=strategy_result
-            )
-
-            # === 市場価格を更新 + Layer 3監視 ===
-            # 当日の全ティックをチェック、15分ごとにLayer 3a監視実行
+            # === ティックループ（毎時ルール再生成 + 価格更新 + 監視） ===
             next_date = current_date + timedelta(days=1)
             last_monitor_time = None
+            last_rule_generation_hour = None  # 最後にルール生成した時間
             monitor_interval = timedelta(minutes=15)
             layer3a_count = 0
             layer3b_count = 0
+            hourly_rule_count = 0
+            strategy_result = None  # 現在有効な構造化ルール
+            bias = 'N/A'
 
             # 進捗表示用
             tick_count = 0
             last_progress_update = None
-            progress_interval = timedelta(hours=1)  # 1時間ごとに進捗表示
+            progress_interval = timedelta(hours=1)
 
             for tick in tick_data:
                 tick_time = tick['time']
                 if current_date <= tick_time.date() < next_date:
                     tick_count += 1
+
+                    # 市場価格を更新
+                    self.simulator.update_market_price(
+                        bid=tick['bid'],
+                        ask=tick['ask']
+                    )
+
+                    # === 毎時00分: 構造化ルール再生成（本番と同じ動作） ===
+                    current_hour = tick_time.hour
+                    if tick_time.minute == 0 and last_rule_generation_hour != current_hour:
+                        print(f"\n🤖 {tick_time.strftime('%Y-%m-%d %H:%M')} - ルール再生成中...")
+
+                        # 初回のみ前日振り返り結果を渡す
+                        review_to_use = review_result if hourly_rule_count == 0 else None
+
+                        strategy_result = self._run_hourly_rule_generation(
+                            tick_time=tick_time,
+                            review_result=review_to_use
+                        )
+
+                        if strategy_result:
+                            bias = strategy_result.get('daily_bias', 'N/A')
+                            should_trade = strategy_result.get('entry_conditions', {}).get('should_trade', False)
+
+                            # トレード判断・実行
+                            if should_trade:
+                                self._execute_trade_from_strategy(strategy_result, tick_time)
+
+                        last_rule_generation_hour = current_hour
+                        hourly_rule_count += 1
+                        print(f"✓ ルール再生成完了 (バイアス: {bias})\n")
 
                     # 進捗表示（1時間ごと）
                     if last_progress_update is None or (tick_time - last_progress_update) >= progress_interval:
@@ -635,14 +620,8 @@ class BacktestEngine:
                               f"ポジション: {len(self.simulator.open_positions)}個")
                         last_progress_update = tick_time
 
-                    # 市場価格を更新
-                    self.simulator.update_market_price(
-                        bid=tick['bid'],
-                        ask=tick['ask']
-                    )
-
-                    # === Phase 4: Layer 3a監視（15分ごと、ポジション保有時） ===
-                    if self.simulator.open_positions:
+                    # === Layer 3a監視（15分ごと、ポジション保有時） ===
+                    if self.simulator.open_positions and strategy_result:
                         if last_monitor_time is None or (tick_time - last_monitor_time) >= monitor_interval:
                             self._run_layer3a_monitoring(
                                 tick_time=tick_time,
@@ -652,7 +631,7 @@ class BacktestEngine:
                             last_monitor_time = tick_time
                             layer3a_count += 1
 
-                    # === Phase 5: Layer 3b緊急評価（異常検知時） ===
+                    # === Layer 3b緊急評価（異常検知時） ===
                     anomaly = self._detect_anomaly(
                         tick_time=tick_time,
                         current_price={'bid': tick['bid'], 'ask': tick['ask']}
@@ -676,7 +655,8 @@ class BacktestEngine:
             # 1行サマリー出力
             summary_parts = [
                 f"📅 {current_date.strftime('%Y-%m-%d')}",
-                f"バイアス:{bias}",
+                f"ルール再生成:{hourly_rule_count}回",
+                f"最終バイアス:{bias}",
             ]
 
             # トレードがあった場合のみ詳細を追加
@@ -1231,6 +1211,91 @@ class BacktestEngine:
             print(error_msg)
             return None
 
+    def _run_hourly_rule_generation(
+        self,
+        tick_time: datetime,
+        review_result: Optional[Dict] = None
+    ) -> Optional[Dict]:
+        """
+        毎時00分に構造化ルールを再生成（本番と同じ動作）
+
+        Args:
+            tick_time: 現在のティック時刻
+            review_result: 前日の振り返り結果（最初の時間のみ使用）
+
+        Returns:
+            構造化ルール、失敗時はNone
+        """
+        try:
+            from src.ai_analysis.ai_analyzer import AIAnalyzer
+            from src.utils.config import get_config
+
+            config = get_config()
+
+            # ログ出力
+            self.logger.info(
+                f"毎時ルール生成: {tick_time.strftime('%Y-%m-%d %H:%M')}, "
+                f"モデル={config.model_daily_analysis}"
+            )
+
+            # AIAnalyzer初期化（分析時刻までのデータのみ使用）
+            analyzer = AIAnalyzer(
+                symbol=self.symbol,
+                model='daily_analysis',
+                backtest_start_date=self.start_date.strftime('%Y-%m-%d'),
+                backtest_end_date=self.end_date.strftime('%Y-%m-%d'),
+                analysis_date=tick_time  # このティック時刻までのデータのみ
+            )
+
+            # データパイプライン実行
+            tick_data = analyzer._load_tick_data()
+            if not tick_data:
+                self.logger.error("ティックデータ読み込み失敗")
+                return None
+
+            timeframe_data = analyzer._convert_timeframes(tick_data)
+            if not timeframe_data:
+                self.logger.error("時間足変換失敗")
+                return None
+
+            indicators = analyzer._calculate_indicators(timeframe_data)
+            if not indicators:
+                self.logger.error("テクニカル指標計算失敗")
+                return None
+
+            market_data = analyzer.data_standardizer.standardize_for_ai(
+                timeframe_data=timeframe_data,
+                indicators=indicators
+            )
+            market_data['symbol'] = self.symbol
+
+            # 過去5日の統計を計算
+            past_statistics = self._calculate_past_statistics(tick_time.date(), days=5)
+
+            # 構造化トレードルールを生成
+            structured_rule = analyzer.generate_structured_rule(
+                market_data=market_data,
+                review_result=review_result,
+                past_statistics=past_statistics
+            )
+
+            # レポート用にデータ保存
+            date_str = tick_time.strftime('%Y-%m-%d')
+            hour_str = tick_time.strftime('%H:00')
+            if date_str not in self.daily_reports:
+                self.daily_reports[date_str] = {}
+            if 'hourly_rules' not in self.daily_reports[date_str]:
+                self.daily_reports[date_str]['hourly_rules'] = {}
+            self.daily_reports[date_str]['hourly_rules'][hour_str] = structured_rule
+
+            return structured_rule
+
+        except Exception as e:
+            error_msg = f"❌ 毎時ルール生成失敗 ({tick_time.strftime('%Y-%m-%d %H:%M')}): {e}"
+            self.logger.error(error_msg, exc_info=True)
+            print(error_msg)
+            return None
+
     def _run_morning_analysis(
         self,
         current_date: date,
@@ -1238,6 +1303,8 @@ class BacktestEngine:
     ) -> Optional[Dict]:
         """
         朝の詳細分析を実行（08:00、Gemini Pro）
+
+        ⚠️ 非推奨：_run_hourly_rule_generation を使用してください
 
         Args:
             current_date: 分析対象日
