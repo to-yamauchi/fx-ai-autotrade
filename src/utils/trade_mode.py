@@ -166,8 +166,8 @@ class TradeModeConfig:
                 f"Invalid date format. Use YYYY-MM-DD format. Error: {e}"
             )
 
-        if start_date >= end_date:
-            raise ValueError("BACKTEST_START_DATE must be before BACKTEST_END_DATE")
+        if start_date > end_date:
+            raise ValueError("BACKTEST_START_DATE must be before or equal to BACKTEST_END_DATE")
 
         return start_date, end_date
 
